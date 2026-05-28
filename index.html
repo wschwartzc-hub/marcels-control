@@ -2004,6 +2004,13 @@
     </div>
     <p style="font-size:12px;color:var(--muted);margin-bottom:16px">El costo de los platillos se calcula con el método que elijas aquí.</p>
 
+    <div class="search-bar" style="margin-bottom:12px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="insumos-search" placeholder="Buscar insumo…" oninput="renderInsumos()" autocomplete="off">
+    </div>
+
+    <div class="chips" id="insumos-category-chips" style="margin-bottom:14px"></div>
+
     <div id="insumos-list"></div>
 
     <button class="btn btn-coral" style="margin-top:14px" onclick="openPurchase()">🛒 Registrar compra</button>
@@ -2018,6 +2025,16 @@
     <div class="input-group">
       <label class="input-label">Nombre</label>
       <input class="input" type="text" id="ing-name" autocomplete="off">
+    </div>
+    <div class="input-group">
+      <label class="input-label">Categoría</label>
+      <select class="select" id="ing-category">
+        <option value="Mariscos">🦐 Mariscos</option>
+        <option value="Verduras">🥬 Verduras</option>
+        <option value="Salsas/Bebidas">🧂 Salsas/Bebidas</option>
+        <option value="Empaque">📦 Empaque/Desechables</option>
+        <option value="Otros">Otros</option>
+      </select>
     </div>
     <div class="input-group">
       <label class="input-label">Unidad de compra</label>
@@ -2342,23 +2359,24 @@ function initMenu() {
   if (STORAGE.meta.hoursEnd === undefined) STORAGE.meta.hoursEnd = 25;
   if (STORAGE.meta.costPref === undefined) STORAGE.meta.costPref = 'avg';
   if (!STORAGE.ingredients) STORAGE.ingredients = [];
+  STORAGE.ingredients.forEach(i => { if (!i.category) i.category = 'Otros'; });
   if (!STORAGE.purchases) STORAGE.purchases = [];
   if (!STORAGE.recipes) STORAGE.recipes = {};
   if (!STORAGE.dayLog) STORAGE.dayLog = {};
   if (STORAGE.ingredients.length === 0) {
     STORAGE.ingredients = [
-      { id:'i_camaron', name:'Camarón', unit:'kg', yieldPct:72, shelfLifeDays:2, stock:null },
-      { id:'i_pescado', name:'Pescado (filete)', unit:'kg', yieldPct:60, shelfLifeDays:2, stock:null },
-      { id:'i_pulpo', name:'Pulpo', unit:'kg', yieldPct:80, shelfLifeDays:3, stock:null },
-      { id:'i_limon', name:'Limón', unit:'kg', yieldPct:60, shelfLifeDays:10, stock:null },
-      { id:'i_cebolla', name:'Cebolla morada', unit:'kg', yieldPct:90, shelfLifeDays:14, stock:null },
-      { id:'i_pepino', name:'Pepino', unit:'kg', yieldPct:85, shelfLifeDays:7, stock:null },
-      { id:'i_tomate', name:'Tomate', unit:'kg', yieldPct:90, shelfLifeDays:7, stock:null },
-      { id:'i_cilantro', name:'Cilantro', unit:'manojo', yieldPct:85, shelfLifeDays:5, stock:null },
-      { id:'i_aguacate', name:'Aguacate', unit:'pza', yieldPct:70, shelfLifeDays:4, stock:null },
-      { id:'i_tostadas', name:'Tostadas', unit:'paq', yieldPct:100, shelfLifeDays:30, stock:null },
-      { id:'i_clamato', name:'Clamato', unit:'L', yieldPct:100, shelfLifeDays:30, stock:null },
-      { id:'i_salsanegra', name:'Salsa negra', unit:'L', yieldPct:100, shelfLifeDays:60, stock:null }
+      { id:'i_camaron', name:'Camarón', category:'Mariscos', unit:'kg', yieldPct:72, shelfLifeDays:2, stock:null },
+      { id:'i_pescado', name:'Pescado (filete)', category:'Mariscos', unit:'kg', yieldPct:60, shelfLifeDays:2, stock:null },
+      { id:'i_pulpo', name:'Pulpo', category:'Mariscos', unit:'kg', yieldPct:80, shelfLifeDays:3, stock:null },
+      { id:'i_limon', name:'Limón', category:'Verduras', unit:'kg', yieldPct:60, shelfLifeDays:10, stock:null },
+      { id:'i_cebolla', name:'Cebolla morada', category:'Verduras', unit:'kg', yieldPct:90, shelfLifeDays:14, stock:null },
+      { id:'i_pepino', name:'Pepino', category:'Verduras', unit:'kg', yieldPct:85, shelfLifeDays:7, stock:null },
+      { id:'i_tomate', name:'Tomate', category:'Verduras', unit:'kg', yieldPct:90, shelfLifeDays:7, stock:null },
+      { id:'i_cilantro', name:'Cilantro', category:'Verduras', unit:'manojo', yieldPct:85, shelfLifeDays:5, stock:null },
+      { id:'i_aguacate', name:'Aguacate', category:'Verduras', unit:'pza', yieldPct:70, shelfLifeDays:4, stock:null },
+      { id:'i_tostadas', name:'Tostadas', category:'Empaque', unit:'paq', yieldPct:100, shelfLifeDays:30, stock:null },
+      { id:'i_clamato', name:'Clamato', category:'Salsas/Bebidas', unit:'L', yieldPct:100, shelfLifeDays:30, stock:null },
+      { id:'i_salsanegra', name:'Salsa negra', category:'Salsas/Bebidas', unit:'L', yieldPct:100, shelfLifeDays:60, stock:null }
     ];
   }
 }
@@ -2389,7 +2407,7 @@ function go(page) {
     document.getElementById('clients-search').value = '';
     renderClientsList();
   }
-  if (page === 'insumos') renderInsumos();
+  if (page === 'insumos') { insumosCategoryFilter='all'; const isi=document.getElementById('insumos-search'); if(isi) isi.value=''; renderInsumos(); }
   if (page === 'intel') renderIntel();
   if (page === 'home') { renderHomeAlerts(); updateStatusBar(); }
 }
@@ -4591,10 +4609,27 @@ function setCostPref(pref) {
   renderInsumos();
 }
 
+let insumosCategoryFilter = 'all';
+
+function setInsumosCategory(cat) {
+  insumosCategoryFilter = cat;
+  renderInsumos();
+}
+
+function renderInsumosCategoryChips() {
+  const cats = [...new Set(STORAGE.ingredients.map(i => i.category || 'Otros'))].sort();
+  const el = document.getElementById('insumos-category-chips');
+  if (!el) return;
+  el.innerHTML = `<button class="chip ${insumosCategoryFilter==='all'?'active':''}" onclick="setInsumosCategory('all')">Todas</button>` +
+    cats.map(c => `<button class="chip ${insumosCategoryFilter===c?'active':''}" onclick="setInsumosCategory('${c.replace(/'/g,"\\'")}')">${c}</button>`).join('');
+}
+
 function renderInsumos() {
   // cost method toggle highlight
   document.getElementById('cm-avg').classList.toggle('active', STORAGE.meta.costPref === 'avg');
   document.getElementById('cm-last').classList.toggle('active', STORAGE.meta.costPref === 'last');
+
+  renderInsumosCategoryChips();
 
   const list = document.getElementById('insumos-list');
   if (STORAGE.ingredients.length === 0) {
@@ -4602,7 +4637,35 @@ function renderInsumos() {
     return;
   }
 
-  list.innerHTML = STORAGE.ingredients.map(ing => {
+  // Filter
+  let items = STORAGE.ingredients.slice();
+  if (insumosCategoryFilter !== 'all') items = items.filter(i => (i.category||'Otros') === insumosCategoryFilter);
+  const q = (document.getElementById('insumos-search')?.value || '').trim().toLowerCase();
+  if (q) items = items.filter(i => i.name.toLowerCase().includes(q) || (i.category||'').toLowerCase().includes(q));
+
+  // Sort by category, then name
+  items.sort((a,b) => (a.category||'Otros').localeCompare(b.category||'Otros') || a.name.localeCompare(b.name));
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">' + (q ? 'Nada coincide con tu búsqueda.' : 'Sin insumos en esta categoría.') + '</div></div>';
+    return;
+  }
+
+  // Group by category (only when showing all)
+  const showHeaders = (insumosCategoryFilter === 'all');
+  let lastCat = null;
+  list.innerHTML = items.map(ing => {
+    let header = '';
+    const cat = ing.category || 'Otros';
+    if (showHeaders && cat !== lastCat) {
+      lastCat = cat;
+      header = `<div class="cat-header">${cat}</div>`;
+    }
+    return header + renderInsumoCard(ing);
+  }).join('');
+}
+
+function renderInsumoCard(ing) {
     const cost = getIngredientCost(ing.id);
     const realCost = getRealCost(ing.id);
     const pref = STORAGE.meta.costPref;
@@ -4653,7 +4716,6 @@ function renderInsumos() {
         ${cost.count>0?`<span>🛒 ${cost.count} ${cost.count===1?'compra':'compras'}</span>`:''}
       </div>
     </div>`;
-  }).join('');
 }
 
 let editingIngredientId = null;
@@ -4664,6 +4726,7 @@ function editIngredient(id) {
   editingIngredientId = id;
   document.getElementById('ing-edit-title').textContent = ing.name;
   document.getElementById('ing-name').value = ing.name;
+  document.getElementById('ing-category').value = ing.category || 'Otros';
   document.getElementById('ing-unit').value = ing.unit;
   document.getElementById('ing-yield').value = ing.yieldPct;
   document.getElementById('ing-shelf').value = ing.shelfLifeDays;
@@ -4675,6 +4738,7 @@ function openNewIngredient() {
   editingIngredientId = null;
   document.getElementById('ing-edit-title').textContent = 'Nuevo insumo';
   document.getElementById('ing-name').value = '';
+  document.getElementById('ing-category').value = 'Mariscos';
   document.getElementById('ing-unit').value = 'kg';
   document.getElementById('ing-yield').value = 100;
   document.getElementById('ing-shelf').value = 7;
@@ -4712,6 +4776,7 @@ function renderIngredientCostPreview(id) {
 
 function saveIngredient() {
   const name = document.getElementById('ing-name').value.trim();
+  const category = document.getElementById('ing-category').value;
   const unit = document.getElementById('ing-unit').value;
   const yieldPct = parseFloat(document.getElementById('ing-yield').value) || 100;
   const shelfLifeDays = parseInt(document.getElementById('ing-shelf').value) || 7;
@@ -4719,10 +4784,10 @@ function saveIngredient() {
 
   if (editingIngredientId) {
     const ing = STORAGE.ingredients.find(i => i.id === editingIngredientId);
-    Object.assign(ing, { name, unit, yieldPct, shelfLifeDays });
+    Object.assign(ing, { name, category, unit, yieldPct, shelfLifeDays });
   } else {
     STORAGE.ingredients.push({
-      id: 'ing' + Date.now(), name, unit, yieldPct, shelfLifeDays, stock: null
+      id: 'ing' + Date.now(), name, category, unit, yieldPct, shelfLifeDays, stock: null
     });
   }
   saveToStore();
