@@ -1,0 +1,14 @@
+[[headers]]
+  for = "/*"
+  [headers.values]
+    # Permite que la geolocalización (clima automático) funcione
+    Permissions-Policy = "geolocation=(self)"
+    # Seguridad básica
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Redirige todo a index.html (por si acaso)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
