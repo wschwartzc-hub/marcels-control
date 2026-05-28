@@ -1250,6 +1250,37 @@
   }
   .yield-note strong { color: var(--navy); }
 
+  .cat-header {
+    font-size: 12px;
+    font-weight: 800;
+    color: var(--teal);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin: 18px 0 8px;
+    padding-left: 4px;
+  }
+  .cat-header:first-child { margin-top: 4px; }
+
+  .search-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--white);
+    border: 1px solid var(--soft);
+    border-radius: var(--r-md);
+    padding: 12px 16px;
+    color: var(--muted);
+  }
+  .search-bar input {
+    flex: 1;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: 15px;
+    color: var(--ink);
+    outline: none;
+  }
+
   /* === Intelligence module === */
   .intel-hero {
     background: linear-gradient(135deg, var(--navy), var(--teal));
@@ -1698,12 +1729,19 @@
     <h1>Mi <span class="italic">menú</span></h1>
     <p class="subtitle">El precio ya está. Lo que falta: cuánto te cuesta hacerlo.</p>
 
+    <div class="search-bar" style="margin-bottom:12px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+      <input type="text" id="menu-search" placeholder="Buscar producto…" oninput="renderMenuList(currentMenuFilter)" autocomplete="off">
+    </div>
+
     <div class="tabs">
       <button class="tab active" onclick="filterMenu('all', event)">Todos</button>
       <button class="tab" onclick="filterMenu('stock', event)">Con stock</button>
       <button class="tab" onclick="filterMenu('missing', event)">Sin costo</button>
       <button class="tab" onclick="filterMenu('bad', event)">A revisar</button>
     </div>
+
+    <div class="chips" id="menu-category-chips" style="margin-bottom:14px"></div>
 
     <div id="menu-list"></div>
 
@@ -1755,6 +1793,18 @@
     <div class="input-group">
       <label class="input-label">Precio de venta ($)</label>
       <input class="input" type="number" inputmode="decimal" id="edit-price" autocomplete="off">
+    </div>
+
+    <div class="input-group" style="background:var(--white);padding:14px;border-radius:var(--r-md);border:1px solid var(--soft)">
+      <label class="input-label" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="edit-has-late" onchange="toggleLatePrice()" style="width:20px;height:20px;accent-color:var(--coral)">
+        🌙 Precio nocturno (fuera de horario)
+      </label>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px;padding-left:30px">Para cervezas/bebidas que cuestan más después del cierre. Mismo stock, precio distinto.</p>
+      <div id="late-price-field" style="display:none;margin-top:12px">
+        <label class="input-label">Precio fuera de horario ($)</label>
+        <input class="input" type="number" inputmode="decimal" id="edit-price-late" placeholder="Ej: 200">
+      </div>
     </div>
 
     <div class="input-group">
@@ -2202,7 +2252,7 @@ const STORAGE = {
   purchases: [],     // compras: {id,date,ingredientId,qty,unit,totalPaid,supplier}
   recipes: {},        // {menuItemId: [{ingredientId, qty, unit}]}
   dayLog: {},         // {'2026-05-28': {weather:'hot', note:''}}
-  meta: { fixedCosts: 10075, nextClientNum: 1, posMode: 'cart', hoursStart: 10, hoursEnd: 22, costPref: 'avg' }
+  meta: { fixedCosts: 10075, nextClientNum: 1, posMode: 'cart', hoursStart: 10, hoursEnd: 25, costPref: 'avg' }
 };
 
 const STORAGE_KEY = 'marcels_data_v1';
@@ -2221,36 +2271,35 @@ function loadFromStore() {
 
 /* ===== Seed menu (same as Excel) ===== */
 // Format: [name, category, price, cost, tracksStock, stock, stockUnit, lowThreshold]
+// Format: [name, category, price, cost, tracksStock, stock, stockUnit, lowThreshold, priceLate]
+// priceLate = precio fuera de horario (null = mismo precio siempre)
 const SEED_MENU = [
-  ["Aguachile verde","Aguachiles",270,null,false,0,"",0],
-  ["Aguachile negro","Aguachiles",280,null,false,0,"",0],
-  ["Aguachile salseado","Aguachiles",250,null,false,0,"",0],
-  ["Ceviche mixto Litro","Ceviches",300,null,false,0,"",0],
-  ["Ceviche mixto 1/2 Litro","Ceviches",200,null,false,0,"",0],
-  ["Ceviche camarón Litro","Ceviches",350,null,false,0,"",0],
-  ["Ceviche camarón 1/2 Litro","Ceviches",240,null,false,0,"",0],
-  ["Ceviche pescado Litro","Ceviches",280,null,false,0,"",0],
-  ["Ceviche pescado 1/2 Litro","Ceviches",190,null,false,0,"",0],
-  ["Pa' la Raza","Charolas",430,null,false,0,"",0],
-  ["Para Pelar","Charolas",450,null,false,0,"",0],
-  ["Torre de mariscos","Charolas",850,null,false,0,"",0],
-  ["Callo de Hacha","Charolas",950,null,false,0,"",0],
-  ["Tostada Ruda","Tostadas",145,null,false,0,"",0],
-  ["Tostadas extra","Extras",25,null,true,null,"paq",10],
-  ["Cóctel camarón Litro","Cócteles",350,null,false,0,"",0],
-  ["Cóctel camarón 1/2 Lt","Cócteles",225,null,false,0,"",0],
-  ["Clamato preparado","Bebidas",150,null,false,0,"",0],
-  ["Michelada","Bebidas",150,null,false,0,"",0],
-  ["Perlas negras Litro","Bebidas",280,null,false,0,"",0],
-  ["Whisky preparado Litro","Bebidas",200,null,false,0,"",0],
-  ["Six Tecate (horario)","Cerveza",130,null,true,null,"six",5],
-  ["Six Amstel (horario)","Cerveza",150,null,true,null,"six",5],
-  ["Six Barrilito (horario)","Cerveza",130,null,true,null,"six",5],
-  ["Six Tecate (fuera horario)","Cerveza",200,null,true,null,"six",5],
-  ["Six Amstel (fuera horario)","Cerveza",300,null,true,null,"six",5],
-  ["Six Barrilito (fuera horario)","Cerveza",200,null,true,null,"six",5],
-  ["Coca Cola 355ml","Bebidas",50,null,true,null,"lata",12],
-  ["Envío a domicilio","Servicio",50,null,false,0,"",0],
+  ["Aguachile verde","Aguachiles",270,null,false,null,"",0,null],
+  ["Aguachile negro","Aguachiles",280,null,false,null,"",0,null],
+  ["Aguachile salseado","Aguachiles",250,null,false,null,"",0,null],
+  ["Ceviche mixto Litro","Ceviches",300,null,false,null,"",0,null],
+  ["Ceviche mixto 1/2 Litro","Ceviches",200,null,false,null,"",0,null],
+  ["Ceviche camarón Litro","Ceviches",350,null,false,null,"",0,null],
+  ["Ceviche camarón 1/2 Litro","Ceviches",240,null,false,null,"",0,null],
+  ["Ceviche pescado Litro","Ceviches",280,null,false,null,"",0,null],
+  ["Ceviche pescado 1/2 Litro","Ceviches",190,null,false,null,"",0,null],
+  ["Pa' la Raza","Charolas",430,null,false,null,"",0,null],
+  ["Para Pelar","Charolas",450,null,false,null,"",0,null],
+  ["Torre de mariscos","Charolas",850,null,false,null,"",0,null],
+  ["Callo de Hacha","Charolas",950,null,false,null,"",0,null],
+  ["Tostada Ruda","Tostadas",145,null,false,null,"",0,null],
+  ["Tostadas extra","Extras",25,null,true,null,"paq",10,null],
+  ["Cóctel camarón Litro","Cócteles",350,null,false,null,"",0,null],
+  ["Cóctel camarón 1/2 Lt","Cócteles",225,null,false,null,"",0,null],
+  ["Clamato preparado","Bebidas",150,null,false,null,"",0,null],
+  ["Michelada","Bebidas",150,null,false,null,"",0,null],
+  ["Perlas negras Litro","Bebidas",280,null,false,null,"",0,null],
+  ["Whisky preparado Litro","Bebidas",200,null,false,null,"",0,null],
+  ["Six Tecate","Cerveza",130,null,true,null,"six",5,200],
+  ["Six Amstel","Cerveza",150,null,true,null,"six",5,300],
+  ["Six Barrilito","Cerveza",130,null,true,null,"six",5,200],
+  ["Coca Cola 355ml","Bebidas",50,null,true,null,"lata",12,null],
+  ["Envío a domicilio","Servicio",50,null,false,null,"",0,null]
 ];
 
 const EXPENSE_CATEGORIES = {
@@ -2272,6 +2321,7 @@ function initMenu() {
       stock: item[5] !== undefined ? item[5] : null,  // null = not counted yet, 0 = actually out
       stockUnit: item[6] || '',
       lowThreshold: item[7] || 0,
+      priceLate: item[8] !== undefined ? item[8] : null,  // precio fuera de horario
       yieldPct: 100
     }));
   } else {
@@ -2282,13 +2332,14 @@ function initMenu() {
       if (m.stockUnit === undefined) m.stockUnit = '';
       if (m.lowThreshold === undefined) m.lowThreshold = 0;
       if (m.yieldPct === undefined) m.yieldPct = 100;
+      if (!Object.prototype.hasOwnProperty.call(m, 'priceLate')) m.priceLate = null;
     });
   }
   if (!STORAGE.clients) STORAGE.clients = [];
   if (!STORAGE.meta.nextClientNum) STORAGE.meta.nextClientNum = 1;
   if (!STORAGE.meta.posMode) STORAGE.meta.posMode = 'cart';
   if (STORAGE.meta.hoursStart === undefined) STORAGE.meta.hoursStart = 10;
-  if (STORAGE.meta.hoursEnd === undefined) STORAGE.meta.hoursEnd = 22;
+  if (STORAGE.meta.hoursEnd === undefined) STORAGE.meta.hoursEnd = 25;
   if (STORAGE.meta.costPref === undefined) STORAGE.meta.costPref = 'avg';
   if (!STORAGE.ingredients) STORAGE.ingredients = [];
   if (!STORAGE.purchases) STORAGE.purchases = [];
@@ -2331,7 +2382,7 @@ function go(page) {
   if (page === 'sale-wizard') { resetSaleWizard(); }
   if (page === 'expense-wizard') { resetExpenseWizard(); }
   if (page === 'dashboard') renderDashboard();
-  if (page === 'menu-manage') { currentMenuFilter = 'all'; renderMenuList('all'); initHoursSelects(); }
+  if (page === 'menu-manage') { currentMenuFilter = 'all'; menuCategoryFilter='all'; const ms=document.getElementById('menu-search'); if(ms) ms.value=''; renderMenuList('all'); initHoursSelects(); }
   if (page === 'history') renderHistory('sales');
   if (page === 'pos') initPos();
   if (page === 'clients') {
@@ -2901,19 +2952,60 @@ function filterMenu(f, ev) {
   renderMenuList(f);
 }
 
+let menuCategoryFilter = 'all';
+
+function setMenuCategory(cat) {
+  menuCategoryFilter = cat;
+  renderMenuList(currentMenuFilter);
+}
+
+function renderMenuCategoryChips() {
+  const cats = [...new Set(STORAGE.menu.map(m => m.category))].sort();
+  const chipsEl = document.getElementById('menu-category-chips');
+  if (!chipsEl) return;
+  chipsEl.innerHTML = `<button class="chip ${menuCategoryFilter==='all'?'active':''}" onclick="setMenuCategory('all')">Todas</button>` +
+    cats.map(c => `<button class="chip ${menuCategoryFilter===c?'active':''}" onclick="setMenuCategory('${c.replace(/'/g,"\\'")}')">${c}</button>`).join('');
+}
+
 function renderMenuList(filter) {
-  let items = STORAGE.menu;
+  renderMenuCategoryChips();
+  let items = STORAGE.menu.slice();
+
+  // Quality/stock filters (tabs)
   if (filter === 'missing') items = items.filter(m => !m.cost);
   if (filter === 'bad') items = items.filter(m => m.cost && (m.cost / (m.yieldPct/100 || 1) / m.price) > 0.4);
   if (filter === 'stock') items = items.filter(m => m.tracksStock);
 
+  // Category filter
+  if (menuCategoryFilter !== 'all') items = items.filter(m => m.category === menuCategoryFilter);
+
+  // Text search
+  const q = (document.getElementById('menu-search')?.value || '').trim().toLowerCase();
+  if (q) items = items.filter(m => m.name.toLowerCase().includes(q) || m.category.toLowerCase().includes(q));
+
+  // Sort by category, then by name (so it's always organized)
+  items.sort((a,b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name));
+
   if (items.length === 0) {
     document.getElementById('menu-list').innerHTML =
-      '<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">Nada por aquí.</div></div>';
+      '<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">' + (q ? 'Nada coincide con tu búsqueda.' : 'Nada por aquí.') + '</div></div>';
     return;
   }
 
+  // Group by category with headers (only when showing all categories)
+  const showHeaders = (menuCategoryFilter === 'all');
+  let lastCat = null;
   document.getElementById('menu-list').innerHTML = items.map(m => {
+    let header = '';
+    if (showHeaders && m.category !== lastCat) {
+      lastCat = m.category;
+      header = `<div class="cat-header">${m.category}</div>`;
+    }
+    return header + renderMenuItemRow(m);
+  }).join('');
+}
+
+function renderMenuItemRow(m) {
     const realCost = m.cost ? m.cost / ((m.yieldPct || 100) / 100) : null;
     const fc = realCost ? (realCost / m.price) : null;
     let badge = '';
@@ -2933,15 +3025,20 @@ function renderMenuList(filter) {
       }
     }
 
+    // Show dual price for items with late price
+    let priceDisplay = `$${m.price}`;
+    if (m.priceLate != null && m.priceLate > 0) {
+      priceDisplay = `$${m.price} <span style="color:#4527A0">· 🌙 $${m.priceLate}</span>`;
+    }
+
     return `<div class="record" onclick="editMenuItem('${m.id}')" style="cursor:pointer">
       <div class="record-info">
         <div class="record-title">${m.name}</div>
-        <div class="record-meta">$${m.price} · ${m.category} · ${badge}</div>
+        <div class="record-meta">${priceDisplay} · ${m.category} · ${badge}</div>
       </div>
       ${stockHtml}
       <div style="color:var(--muted);font-size:18px;margin-left:8px">›</div>
     </div>`;
-  }).join('');
 }
 
 function editMenuItem(id) {
@@ -2957,7 +3054,10 @@ function editMenuItem(id) {
   document.getElementById('edit-stock').value = m.stock || 0;
   document.getElementById('edit-stock-unit').value = m.stockUnit || 'pza';
   document.getElementById('edit-stock-low').value = m.lowThreshold || 0;
+  document.getElementById('edit-has-late').checked = (m.priceLate != null);
+  document.getElementById('edit-price-late').value = m.priceLate != null ? m.priceLate : '';
   toggleStockFields();
+  toggleLatePrice();
   updateEditPreview();
   document.getElementById('edit-cost').oninput = updateEditPreview;
   document.getElementById('edit-price').oninput = updateEditPreview;
@@ -2977,7 +3077,10 @@ function addNewItem() {
   document.getElementById('edit-stock').value = 0;
   document.getElementById('edit-stock-unit').value = 'pza';
   document.getElementById('edit-stock-low').value = 0;
+  document.getElementById('edit-has-late').checked = false;
+  document.getElementById('edit-price-late').value = '';
   toggleStockFields();
+  toggleLatePrice();
   document.getElementById('edit-preview').innerHTML = '';
   document.getElementById('edit-cost').oninput = updateEditPreview;
   document.getElementById('edit-price').oninput = updateEditPreview;
@@ -2988,6 +3091,11 @@ function addNewItem() {
 function toggleStockFields() {
   const tracks = document.getElementById('edit-tracks-stock').checked;
   document.getElementById('stock-fields').style.display = tracks ? 'block' : 'none';
+}
+
+function toggleLatePrice() {
+  const has = document.getElementById('edit-has-late').checked;
+  document.getElementById('late-price-field').style.display = has ? 'block' : 'none';
 }
 
 function updateEditPreview() {
@@ -3031,16 +3139,18 @@ function saveMenuItem() {
   const stock = parseInt(document.getElementById('edit-stock').value) || 0;
   const stockUnit = document.getElementById('edit-stock-unit').value;
   const lowThreshold = parseInt(document.getElementById('edit-stock-low').value) || 0;
+  const hasLate = document.getElementById('edit-has-late').checked;
+  const priceLate = hasLate ? (parseFloat(document.getElementById('edit-price-late').value) || null) : null;
 
   if (!name || !price) { showToast('⚠️ Falta nombre o precio'); return; }
 
   if (editingMenuId) {
     const m = STORAGE.menu.find(x => x.id === editingMenuId);
-    Object.assign(m, { name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold });
+    Object.assign(m, { name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold, priceLate });
   } else {
     STORAGE.menu.push({
       id: 'm' + Date.now(),
-      name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold
+      name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold, priceLate
     });
   }
   saveToStore();
@@ -3501,20 +3611,26 @@ function isWithinBusinessHours() {
   const now = new Date();
   const h = now.getHours() + now.getMinutes() / 60;
   const start = STORAGE.meta.hoursStart || 10;
-  const end = STORAGE.meta.hoursEnd || 22;
+  let end = STORAGE.meta.hoursEnd || 25;
+  // end > 24 means it crosses midnight (e.g. 25 = 1:00 am next day)
+  if (end > 24) {
+    // within hours if: after start today, OR before (end-24) early morning
+    return h >= start || h < (end - 24);
+  }
   return h >= start && h < end;
 }
 
+// Returns the effective price for an item right now (normal vs late-night)
+function effectivePrice(item) {
+  if (item.priceLate != null && item.priceLate > 0 && !isWithinBusinessHours()) {
+    return item.priceLate;
+  }
+  return item.price;
+}
+
 function getMenuForCurrentHours(items) {
-  const inHours = isWithinBusinessHours();
-  return items.filter(m => {
-    const name = m.name.toLowerCase();
-    const isHorario = name.includes('(horario)') && !name.includes('fuera');
-    const isFueraHorario = name.includes('fuera horario');
-    if (isHorario) return inHours;       // show only during hours
-    if (isFueraHorario) return !inHours; // show only outside hours
-    return true;                          // non-beer items always show
-  });
+  // Beers are now unified (one product, dynamic price), so no filtering needed.
+  return items;
 }
 
 function updatePosHoursBadge() {
@@ -3586,10 +3702,13 @@ function renderPosGrid() {
         else if (m.stock <= m.lowThreshold) outClass = 'has-stock-low';
       }
     }
+    const price = effectivePrice(m);
+    const isLate = m.priceLate != null && price === m.priceLate;
+    const lateTag = isLate ? '<span style="font-size:9px;color:#4527A0;font-weight:700;display:block;margin-top:1px">🌙 nocturno</span>' : '';
     return `<button class="product-tile ${outClass}" onclick="posAddItem('${m.id}')" ${m.tracksStock && m.stock !== null && m.stock<=0?'disabled':''}>
-      <div class="product-name">${m.name.replace(/\s*\(horario\)|\s*\(fuera horario\)/gi,'').trim()}</div>
+      <div class="product-name">${m.name}</div>
       <div class="product-meta">
-        <span class="product-price">$${m.price}</span>
+        <span><span class="product-price">$${price}</span>${lateTag}</span>
         ${stockBadge}
       </div>
     </button>`;
@@ -3613,7 +3732,7 @@ function posAddItem(id) {
     }
     existing.qty += 1;
   } else {
-    posState.cart.push({ itemId: id, name: m.name, price: m.price, qty: 1, cost: m.cost, yieldPct: m.yieldPct });
+    posState.cart.push({ itemId: id, name: m.name, price: effectivePrice(m), qty: 1, cost: m.cost, yieldPct: m.yieldPct });
   }
 
   // Haptic-ish feedback
