@@ -3546,8 +3546,88 @@ function filterHistory(f, ev) {
   renderHistory(f);
 }
 
+var _expandedTickets = {};
+
+function toggleTicket(tid) {
+  _expandedTickets[tid] = !_expandedTickets[tid];
+  renderHistory('sales');
+}
+
+// Group sale lines into tickets. Lines share a ticket if they have the same
+// ticketId, OR (for older data) the same date+clientId+payment.
+function groupSalesIntoTickets() {
+  const groups = {};
+  STORAGE.sales.forEach(s => {
+    const key = s.ticketId || (s.date + '|' + (s.clientId||'') + '|' + (s.payment||''));
+    if (!groups[key]) {
+      groups[key] = {
+        key: key,
+        date: s.date,
+        payment: s.payment,
+        client: s.client,
+        clientId: s.clientId,
+        lines: [],
+        total: 0
+      };
+    }
+    groups[key].lines.push(s);
+    groups[key].total += s.total;
+  });
+  return Object.values(groups);
+}
+
 function renderHistory(type) {
-  const data = type === 'sales' ? [...STORAGE.sales] : [...STORAGE.expenses];
+  if (type === 'sales') {
+    const tickets = groupSalesIntoTickets();
+    tickets.sort((a,b) => new Date(b.date) - new Date(a.date));
+
+    if (tickets.length === 0) {
+      document.getElementById('history-list').innerHTML =
+        '<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">Sin ventas todavía.</div></div>';
+      return;
+    }
+
+    document.getElementById('history-list').innerHTML = tickets.map((tk, idx) => {
+      const d = new Date(tk.date);
+      const dateStr = d.toLocaleDateString('es-MX', { day:'numeric', month:'short' }) + ' · ' +
+                      d.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+      const itemCount = tk.lines.reduce((s,l)=>s+l.qty,0);
+      const expanded = !!_expandedTickets[tk.key];
+      const orderNum = String(tickets.length - idx).padStart(3,'0');
+
+      // Summary row (less detail)
+      let html = `<div class="record" onclick="toggleTicket('${tk.key}')" style="cursor:pointer">
+        <div class="record-info">
+          <div class="record-title">Orden #${orderNum} · ${itemCount} ${itemCount===1?'artículo':'artículos'} ${expanded?'▾':'▸'}</div>
+          <div class="record-meta">${dateStr} · ${tk.payment}${tk.client?' · '+tk.client:''}</div>
+        </div>
+        <div class="record-amount">$${tk.total.toLocaleString('es-MX')}</div>
+      </div>`;
+
+      // Expanded detail (more detail) — each item line
+      if (expanded) {
+        html += `<div style="margin:-6px 0 12px;padding:4px 14px 4px 18px;border-left:3px solid var(--teal);background:var(--cream);border-radius:0 12px 12px 0">`;
+        tk.lines.forEach(line => {
+          html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--soft)">
+            <div>
+              <div style="font-size:14px;color:var(--navy);font-weight:600">${line.itemName} ${line.qty>1?'×'+line.qty:''}</div>
+              <div style="font-size:11px;color:var(--muted)">$${(line.total/line.qty).toFixed(0)} c/u</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-weight:700;color:var(--navy)">$${line.total.toLocaleString('es-MX')}</span>
+              <button class="del" onclick="event.stopPropagation();deleteRecord('sales','${line.id}')" style="font-size:16px">×</button>
+            </div>
+          </div>`;
+        });
+        html += `</div>`;
+      }
+      return html;
+    }).join('');
+    return;
+  }
+
+  // EXPENSES (unchanged)
+  const data = [...STORAGE.expenses];
   data.sort((a,b) => new Date(b.date) - new Date(a.date));
 
   if (data.length === 0) {
@@ -3560,17 +3640,7 @@ function renderHistory(type) {
     const d = new Date(item.date);
     const dateStr = d.toLocaleDateString('es-MX', { day:'numeric', month:'short' }) + ' · ' +
                     d.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
-
-    if (type === 'sales') {
-      return `<div class="record">
-        <div class="record-info">
-          <div class="record-title">${item.itemName} ${item.qty>1?'×'+item.qty:''}</div>
-          <div class="record-meta">${dateStr} · ${item.payment}${item.client?' · '+item.client:''}</div>
-        </div>
-        <div class="record-amount">$${item.total.toLocaleString('es-MX')}</div>
-        <button class="del" onclick="deleteRecord('sales','${item.id}')">×</button>
-      </div>`;
-    } else {
+    {
       const personal = item.type === 'Personal';
       return `<div class="record" style="${personal?'background:#FFF3E0':''}">
         <div class="record-info">
@@ -4224,12 +4294,14 @@ function confirmSale() {
   if (posState.cart.length === 0 || !posState.checkoutPayment) return;
 
   const now = new Date().toISOString();
+  const ticketId = 't' + Date.now();  // one shared id for all lines of this sale
   const client = posState.checkoutClient ? STORAGE.clients.find(c => c.id === posState.checkoutClient) : null;
 
   // Save each cart line as a separate sale (compatible with existing data model)
   posState.cart.forEach(c => {
     const sale = {
       id: 's' + Date.now() + Math.random().toString(36).slice(2,7),
+      ticketId: ticketId,
       date: now,
       itemId: c.itemId,
       itemName: c.name,
