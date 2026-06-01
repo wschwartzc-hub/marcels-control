@@ -1291,6 +1291,20 @@
     vertical-align: middle;
   }
 
+  .pay-badge {
+    display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px;
+  }
+  .pay-badge.paid { background:#E8F5E9; color:var(--green); }
+  .pay-badge.pending { background:#FCE8E6; color:var(--red); }
+  .pay-badge.partial { background:#FFF3E0; color:#E65100; }
+  .pay-action {
+    font-size:12px; font-weight:700; padding:4px 12px; border-radius:999px;
+    background:var(--teal); color:white; border:none; cursor:pointer;
+  }
+  .debt-badge {
+    display:inline-block; font-size:11px; font-weight:700; padding:2px 8px; border-radius:999px; margin-left:4px;
+  }
+
   /* === Intelligence module === */
   .intel-hero {
     background: linear-gradient(135deg, var(--navy), var(--teal));
@@ -1557,6 +1571,15 @@
           <div class="step-desc" style="color:rgba(255,255,255,.75)">Qué comprar, cuándo vender, predicciones.</div>
         </div>
         <span class="step-arrow" style="color:rgba(255,255,255,.5)">→</span>
+      </div>
+
+      <div class="step-card" onclick="go('receivables')">
+        <div class="step-num">💰</div>
+        <div class="step-text">
+          <div class="step-title">Por cobrar</div>
+          <div class="step-desc" id="home-receivables-desc">Cuentas pendientes.</div>
+        </div>
+        <span class="step-arrow">→</span>
       </div>
 
       <div class="step-card" onclick="go('clients')">
@@ -2131,6 +2154,14 @@
     <button class="btn btn-coral" style="margin-top:14px" onclick="goBack()">✓ Listo</button>
   </main>
 
+  <!-- POR COBRAR page -->
+  <main class="page page-hidden" id="page-receivables">
+    <h1>Por cobrar</h1>
+    <p class="subtitle">Quién te debe, cuánto y desde cuándo.</p>
+    <div id="receivables-summary"></div>
+    <div id="receivables-list"></div>
+  </main>
+
   <!-- INTELLIGENCE page -->
   <main class="page page-hidden" id="page-intel">
     <h1>Inteligencia</h1>
@@ -2252,6 +2283,13 @@
     <div class="weather-grid" id="weather-grid"></div>
     <button class="btn btn-ghost" id="weather-auto-btn" onclick="fetchWeatherAuto()">📡 Detectar automático (necesita internet)</button>
     <button class="btn btn-ghost" style="margin-top:10px" onclick="closeSheet()">Cerrar</button>
+  </div>
+
+  <!-- Payment sheet -->
+  <div class="sheet" id="payment-sheet" style="max-height:90vh">
+    <div class="sheet-handle"></div>
+    <h2>Cobrar orden</h2>
+    <div id="payment-sheet-body"></div>
   </div>
 
   <!-- Client detail sheet -->
@@ -2596,6 +2634,7 @@ const STORAGE = {
   ingredients: [],   // materia prima: {id,name,unit,yieldPct,shelfLifeDays,stock,costMethod}
   purchases: [],     // compras: {id,date,ingredientId,qty,unit,totalPaid,supplier}
   recipes: {},        // {menuItemId: [{ingredientId, qty, unit}]}
+  tickets: {},        // {ticketId: {status, total, paid, payments:[], client, clientId, date, proofUrl}}
   dayLog: {},         // {'2026-05-28': {weather:'hot', note:''}}
   meta: { fixedCosts: 10075, nextClientNum: 1, posMode: 'cart', hoursStart: 10, hoursEnd: 25, costPref: 'avg' }
 };
@@ -2708,6 +2747,7 @@ function initMenu() {
   STORAGE.ingredients.forEach(i => { if (!i.category) i.category = 'Otros'; });
   if (!STORAGE.purchases) STORAGE.purchases = [];
   if (!STORAGE.recipes) STORAGE.recipes = {};
+  if (!STORAGE.tickets) STORAGE.tickets = {};
   if (!STORAGE.dayLog) STORAGE.dayLog = {};
   if (STORAGE.ingredients.length === 0) {
     STORAGE.ingredients = [
@@ -2728,7 +2768,7 @@ function initMenu() {
 }
 
 /* ===== Navigation ===== */
-const PAGES = ['home','dashboard','sale-wizard','expense-wizard','menu-manage','menu-edit','history','pos','clients','insumos','ingredient-edit','recipe','intel'];
+const PAGES = ['home','dashboard','sale-wizard','expense-wizard','menu-manage','menu-edit','history','pos','clients','insumos','ingredient-edit','recipe','intel','receivables'];
 let navStack = ['home'];
 
 function go(page) {
@@ -2755,6 +2795,7 @@ function go(page) {
   }
   if (page === 'insumos') { insumosCategoryFilter='all'; const isi=document.getElementById('insumos-search'); if(isi) isi.value=''; renderInsumos(); }
   if (page === 'intel') renderIntel();
+  if (page === 'receivables') renderReceivables();
   if (page === 'home') { renderHomeAlerts(); updateStatusBar(); }
 }
 
@@ -2778,6 +2819,7 @@ function goBack() {
     if (prev === 'home') renderHomeAlerts();
     if (prev === 'insumos') renderInsumos();
     if (prev === 'intel') renderIntel();
+    if (prev === 'receivables') renderReceivables();
     if (prev === 'recipe') renderRecipeEditor();
   }
 }
@@ -3595,11 +3637,30 @@ function renderHistory(type) {
       const expanded = !!_expandedTickets[tk.key];
       const orderNum = String(tickets.length - idx).padStart(3,'0');
 
+      // Payment status (from ticket record)
+      const tid = tk.lines[0].ticketId || tk.key;
+      const trec = STORAGE.tickets[tid];
+      let statusBadge = '';
+      let payBtn = '';
+      if (trec) {
+        const bal = ticketBalance(trec);
+        if (trec.status === 'pagada') {
+          statusBadge = '<span class="pay-badge paid">✓ Pagada</span>';
+        } else if (trec.status === 'parcial') {
+          statusBadge = `<span class="pay-badge partial">◐ Debe $${bal.toLocaleString('es-MX')}</span>`;
+          payBtn = `<button class="pay-action" onclick="event.stopPropagation();openPaymentSheet('${tid}')">Cobrar</button>`;
+        } else {
+          statusBadge = `<span class="pay-badge pending">⏳ Pendiente $${bal.toLocaleString('es-MX')}</span>`;
+          payBtn = `<button class="pay-action" onclick="event.stopPropagation();openPaymentSheet('${tid}')">Cobrar</button>`;
+        }
+      }
+
       // Summary row (less detail)
       let html = `<div class="record" onclick="toggleTicket('${tk.key}')" style="cursor:pointer">
         <div class="record-info">
           <div class="record-title">Orden #${orderNum} · ${itemCount} ${itemCount===1?'artículo':'artículos'} ${expanded?'▾':'▸'}</div>
-          <div class="record-meta">${dateStr} · ${tk.payment}${tk.client?' · '+tk.client:''}</div>
+          <div class="record-meta">${dateStr}${tk.client?' · '+tk.client:''}</div>
+          <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${statusBadge}${payBtn}</div>
         </div>
         <div class="record-amount">$${tk.total.toLocaleString('es-MX')}</div>
       </div>`;
@@ -4322,6 +4383,23 @@ function confirmSale() {
     }
   });
 
+  // Create the TICKET record (payment tracking lives here)
+  const ticketTotal = posState.cart.reduce((s,c) => s + c.price*c.qty, 0);
+  const isPending = posState.checkoutPayment === 'Pendiente';
+  STORAGE.tickets[ticketId] = {
+    id: ticketId,
+    date: now,
+    total: ticketTotal,
+    paid: isPending ? 0 : ticketTotal,        // if not pending, it's fully paid now
+    status: isPending ? 'pendiente' : 'pagada',
+    method: posState.checkoutPayment,
+    client: client ? client.name : '',
+    clientId: client ? client.id : null,
+    payments: isPending ? [] : [{ date: now, amount: ticketTotal, method: posState.checkoutPayment }],
+    proofUrl: null,
+    items: posState.cart.map(c => ({ name: c.name, qty: c.qty, total: c.price*c.qty }))
+  };
+
   // Update client stats + purchase intelligence
   if (client) {
     const total = posState.cart.reduce((s,c) => s + c.price*c.qty, 0);
@@ -4474,6 +4552,29 @@ function renderClientsList() {
   }).join('');
 }
 
+function buildClientPaymentHtml(clientId) {
+  const debt = getDebtLevel(clientId);
+  const payer = getPayerScore(clientId);
+
+  let badges = '';
+  if (payer.score !== null) {
+    badges += `<span class="debt-badge" style="background:${payer.color}22;color:${payer.color}">${payer.icon} ${payer.label}</span>`;
+  }
+  if (debt.key !== 'none') {
+    badges += `<span class="debt-badge" style="background:${debt.color}22;color:${debt.color}">${debt.icon} Debe $${debt.debt.toLocaleString('es-MX')}</span>`;
+  }
+  if (!badges) return '';
+
+  let debtNote = '';
+  if (debt.key === 'alta') {
+    debtNote = `<div style="font-size:13px;color:var(--navy);margin-top:8px;background:#FCE8E6;padding:10px;border-radius:10px">🔴 Deuda alta ($${debt.debt.toLocaleString('es-MX')}, la más vieja de ${Math.round(debt.oldestDays)} días). Cóbrale pronto.</div>`;
+  } else if (debt.key === 'media') {
+    debtNote = `<div style="font-size:13px;color:var(--navy);margin-top:8px;background:#FFF3E0;padding:10px;border-radius:10px">🟠 Tiene deuda pendiente. Buen momento para recordarle.</div>`;
+  }
+
+  return `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">${badges}</div>${debtNote}`;
+}
+
 function buildClientBehaviorHtml(clientId) {
   const b = getClientBehavior(clientId);
   if (!b.hasData) {
@@ -4555,6 +4656,7 @@ function openClientDetail(clientId) {
       </div>
     </div>
     ${phoneHtml}
+    ${buildClientPaymentHtml(c.id)}
 
     <div class="kpi-grid" style="margin:16px 0">
       <div class="kpi"><div class="kpi-label">Visitas</div><div class="kpi-value">${c.visits||0}</div></div>
@@ -4700,6 +4802,18 @@ function gatherAllAlerts() {
     alerts.push({ level:'warn', icon:'💸', title:'Gastos personales en la caja', text:`$${total.toLocaleString('es-MX')} este mes. Sepáralos del negocio.`, action:()=>go('history') });
   }
 
+  // Cuentas por cobrar urgentes
+  if (typeof getReceivables === 'function') {
+    const r = getReceivables();
+    const urgent = r.pending.filter(t => t.daysOld >= 14);
+    if (urgent.length > 0) {
+      const totalUrgent = urgent.reduce((s,t)=>s+t.balance,0);
+      alerts.push({ level:'danger', icon:'💰', title:`$${totalUrgent.toLocaleString('es-MX')} por cobrar (atrasado)`, text:`${urgent.length} ${urgent.length===1?'orden lleva':'órdenes llevan'} 2+ semanas sin pagar.`, action:()=>go('receivables') });
+    } else if (r.count > 0) {
+      alerts.push({ level:'warn', icon:'💰', title:`$${r.totalOwed.toLocaleString('es-MX')} por cobrar`, text:`${r.count} ${r.count===1?'orden pendiente':'órdenes pendientes'} de pago.`, action:()=>go('receivables') });
+    }
+  }
+
   return alerts;
 }
 
@@ -4728,6 +4842,12 @@ function renderHomeAlerts() {
       </div>`;
     }
     el.innerHTML = html;
+  }
+
+  const rdesc = document.getElementById('home-receivables-desc');
+  if (rdesc && typeof getReceivables === 'function') {
+    const r = getReceivables();
+    rdesc.textContent = r.count > 0 ? `$${r.totalOwed.toLocaleString('es-MX')} en ${r.count} ${r.count===1?'orden':'órdenes'}.` : 'Todo cobrado.';
   }
 
   const desc = document.getElementById('home-clients-desc');
@@ -6471,6 +6591,325 @@ const TIER_INFO = {
   nuevo:     { label:'Nuevos', icon:'🌱', color:'#1A8C5A' },
   dormido:   { label:'Dormidos', icon:'😴', color:'#8B9491' }
 };
+
+
+/* ===================================================================
+   💰 CUENTAS POR COBRAR — Estado de pago, abonos, scoring de pagador
+=================================================================== */
+
+// Backfill: build ticket records for old sales that don't have one yet
+function ensureTicketsForLegacySales() {
+  const grouped = groupSalesIntoTickets();
+  grouped.forEach(g => {
+    const tid = g.lines[0].ticketId || g.key;
+    if (!STORAGE.tickets[tid]) {
+      // Old sale: assume paid unless its payment method was 'Pendiente'
+      const pending = g.payment === 'Pendiente';
+      STORAGE.tickets[tid] = {
+        id: tid,
+        date: g.date,
+        total: g.total,
+        paid: pending ? 0 : g.total,
+        status: pending ? 'pendiente' : 'pagada',
+        method: g.payment,
+        client: g.client || '',
+        clientId: g.clientId || null,
+        payments: pending ? [] : [{ date: g.date, amount: g.total, method: g.payment }],
+        proofUrl: null,
+        items: g.lines.map(l => ({ name: l.itemName, qty: l.qty, total: l.total }))
+      };
+    }
+  });
+}
+
+// Compute current balance owed on a ticket
+function ticketBalance(tk) {
+  return Math.max(0, (tk.total || 0) - (tk.paid || 0));
+}
+
+// Register a payment (abono) on a ticket
+function addPayment(ticketId, amount, method) {
+  const tk = STORAGE.tickets[ticketId];
+  if (!tk) return;
+  amount = Math.min(amount, ticketBalance(tk));  // can't pay more than owed
+  if (amount <= 0) return;
+  tk.payments = tk.payments || [];
+  tk.payments.push({ date: new Date().toISOString(), amount: amount, method: method || 'Efectivo' });
+  tk.paid = (tk.paid || 0) + amount;
+  if (ticketBalance(tk) <= 0.01) {
+    tk.status = 'pagada';
+    tk.paid = tk.total;
+  } else {
+    tk.status = 'parcial';
+  }
+  saveToStore();
+}
+
+// Mark a whole ticket as paid in one tap
+function markTicketPaid(ticketId, method) {
+  const tk = STORAGE.tickets[ticketId];
+  if (!tk) return;
+  const bal = ticketBalance(tk);
+  if (bal > 0) addPayment(ticketId, bal, method || tk.method || 'Efectivo');
+}
+
+// ---- DEUDA POR CLIENTE ----
+
+// Total a client currently owes (sum of balances across their pending/partial tickets)
+function getClientDebt(clientId) {
+  let debt = 0, oldestDays = 0, count = 0;
+  Object.values(STORAGE.tickets).forEach(tk => {
+    if (tk.clientId === clientId && tk.status !== 'pagada') {
+      const bal = ticketBalance(tk);
+      if (bal > 0) {
+        debt += bal;
+        count++;
+        const days = (Date.now() - new Date(tk.date).getTime()) / 86400000;
+        if (days > oldestDays) oldestDays = days;
+      }
+    }
+  });
+  return { debt, oldestDays, count };
+}
+
+// Debt level alarm: classify how urgent it is to collect from this client
+function getDebtLevel(clientId) {
+  const { debt, oldestDays, count } = getClientDebt(clientId);
+  if (debt <= 0) return { key:'none', label:'Sin deuda', icon:'✅', color:'#1A8C5A', debt:0, oldestDays:0, count:0 };
+  // Severity grows with amount AND age
+  if (debt >= 1000 || oldestDays >= 21) {
+    return { key:'alta', label:'Deuda alta', icon:'🔴', color:'#D45B4A', debt, oldestDays, count };
+  }
+  if (debt >= 400 || oldestDays >= 10) {
+    return { key:'media', label:'Deuda media', icon:'🟠', color:'#E8954A', debt, oldestDays, count };
+  }
+  return { key:'baja', label:'Deuda baja', icon:'🟡', color:'#C9A227', debt, oldestDays, count };
+}
+
+// ---- SCORING DE PAGADOR ----
+// How reliably does this client pay? Based on their ticket history.
+function getPayerScore(clientId) {
+  const tickets = Object.values(STORAGE.tickets).filter(tk => tk.clientId === clientId);
+  if (tickets.length === 0) return { score:null, label:'Sin historial', icon:'➖', color:'#8B9491', tickets:0 };
+
+  let paidOnTime = 0, paidLate = 0, stillOwing = 0;
+  tickets.forEach(tk => {
+    if (tk.status === 'pagada') {
+      // Determine if paid quickly: last payment within 3 days of sale
+      const lastPay = (tk.payments && tk.payments.length) ? tk.payments[tk.payments.length-1] : null;
+      if (lastPay) {
+        const days = (new Date(lastPay.date) - new Date(tk.date)) / 86400000;
+        if (days <= 3) paidOnTime++; else paidLate++;
+      } else { paidOnTime++; }
+    } else {
+      const days = (Date.now() - new Date(tk.date).getTime()) / 86400000;
+      if (days > 7) stillOwing++;  // owing for over a week counts against
+    }
+  });
+
+  const total = tickets.length;
+  // Score 0-100: on-time full credit, late half, still-owing penalizes
+  const raw = (paidOnTime * 1 + paidLate * 0.5 - stillOwing * 0.5) / total;
+  const score = Math.max(0, Math.min(100, Math.round(raw * 100)));
+
+  let label, icon, color;
+  if (score >= 80) { label='Excelente pagador'; icon='⭐'; color='#1A8C5A'; }
+  else if (score >= 55) { label='Buen pagador'; icon='👍'; color='#1A8C8C'; }
+  else if (score >= 30) { label='Pagador regular'; icon='⚠️'; color='#E8954A'; }
+  else { label='Mal pagador'; icon='🚩'; color='#D45B4A'; }
+
+  return { score, label, icon, color, tickets: total, paidOnTime, paidLate, stillOwing };
+}
+
+// ---- VISTA POR COBRAR (datos agregados) ----
+function getReceivables() {
+  ensureTicketsForLegacySales();
+  const pending = Object.values(STORAGE.tickets)
+    .filter(tk => tk.status !== 'pagada' && ticketBalance(tk) > 0)
+    .map(tk => ({
+      ...tk,
+      balance: ticketBalance(tk),
+      daysOld: Math.floor((Date.now() - new Date(tk.date).getTime()) / 86400000)
+    }))
+    // Priority: oldest + biggest first
+    .sort((a,b) => (b.balance * (b.daysOld+1)) - (a.balance * (a.daysOld+1)));
+
+  const totalOwed = pending.reduce((s,t) => s + t.balance, 0);
+  return { pending, totalOwed, count: pending.length };
+}
+
+
+/* ===================================================================
+   💰 UI de cobranza — sheet de pago, subir comprobante, vista por cobrar
+=================================================================== */
+var _payingTicketId = null;
+
+function openPaymentSheet(ticketId) {
+  _payingTicketId = ticketId;
+  renderPaymentSheet();
+  document.getElementById('sheet-backdrop').classList.add('active');
+  document.getElementById('payment-sheet').classList.add('active');
+}
+
+function renderPaymentSheet() {
+  const tk = STORAGE.tickets[_payingTicketId];
+  if (!tk) return;
+  const bal = ticketBalance(tk);
+  const itemsStr = (tk.items||[]).map(i => `${i.name}${i.qty>1?' ×'+i.qty:''}`).join(', ');
+  const d = new Date(tk.date);
+  const dateStr = d.toLocaleDateString('es-MX',{day:'numeric',month:'short'}) + ' · ' + d.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+
+  // Payments history
+  let payHist = '';
+  if (tk.payments && tk.payments.length) {
+    payHist = '<div style="margin:12px 0"><div style="font-size:12px;color:var(--muted);margin-bottom:6px">Abonos registrados:</div>' +
+      tk.payments.map(p => {
+        const pd = new Date(p.date).toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+        return `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--soft)"><span>${pd} · ${p.method}</span><span style="font-weight:700;color:var(--green)">+$${p.amount.toLocaleString('es-MX')}</span></div>`;
+      }).join('') + '</div>';
+  }
+
+  // Proof section
+  let proofSection = '';
+  if (tk.proofUrl) {
+    proofSection = `<div style="margin:12px 0">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Comprobante:</div>
+      <img src="${tk.proofUrl}" style="width:100%;max-height:240px;object-fit:contain;border-radius:12px;border:1px solid var(--soft)">
+    </div>`;
+  } else {
+    proofSection = `<button class="btn btn-ghost" style="margin-top:10px" onclick="document.getElementById('proof-input').click()">📎 Subir comprobante de pago</button>
+    <input type="file" id="proof-input" accept="image/*" style="display:none" onchange="uploadProof(event)">
+    <div id="proof-status" style="font-size:12px;color:var(--muted);margin-top:6px"></div>`;
+  }
+
+  document.getElementById('payment-sheet-body').innerHTML = `
+    <p class="subtitle" style="margin-bottom:8px">${itemsStr}</p>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">${dateStr}${tk.client?' · '+tk.client:''}</div>
+
+    <div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi"><div class="kpi-label">Total</div><div class="kpi-value">$${tk.total.toLocaleString('es-MX')}</div></div>
+      <div class="kpi" style="border-left-color:${bal>0?'var(--red)':'var(--green)'}"><div class="kpi-label">${bal>0?'Debe':'Pagado'}</div><div class="kpi-value">$${(bal>0?bal:tk.total).toLocaleString('es-MX')}</div></div>
+    </div>
+    ${payHist}
+    ${bal > 0 ? `
+      <button class="btn btn-coral" onclick="markTicketPaidUI()">✓ Marcar como pagada ($${bal.toLocaleString('es-MX')})</button>
+      <div class="input-group" style="margin-top:14px">
+        <label class="input-label">¿O registrar un abono parcial?</label>
+        <div class="date-range" style="gap:10px">
+          <input class="input" type="number" inputmode="decimal" id="abono-amount" placeholder="Monto" style="flex:1.3">
+          <select class="select" id="abono-method" style="flex:1">
+            <option value="Efectivo">Efectivo</option>
+            <option value="Transferencia">Transferencia</option>
+            <option value="Tarjeta">Tarjeta</option>
+          </select>
+        </div>
+      </div>
+      <button class="btn btn-ghost" onclick="addAbonoUI()">+ Registrar abono</button>
+    ` : '<div class="insight-card good" style="margin-top:8px"><div class="insight-icon">✅</div><div class="insight-body"><div class="insight-title">Orden pagada completa</div></div></div>'}
+    ${proofSection}
+    <button class="btn btn-ghost" style="margin-top:10px" onclick="closeSheet()">Cerrar</button>
+  `;
+}
+
+function markTicketPaidUI() {
+  markTicketPaid(_payingTicketId);
+  showToast('✓ Orden marcada como pagada');
+  renderPaymentSheet();
+  refreshAfterPayment();
+}
+
+function addAbonoUI() {
+  const amt = parseFloat(document.getElementById('abono-amount').value);
+  const method = document.getElementById('abono-method').value;
+  if (!amt || amt <= 0) { showToast('⚠️ Pon un monto'); return; }
+  addPayment(_payingTicketId, amt, method);
+  showToast('✓ Abono registrado');
+  renderPaymentSheet();
+  refreshAfterPayment();
+}
+
+function refreshAfterPayment() {
+  if (!document.getElementById('page-history').classList.contains('page-hidden')) renderHistory('sales');
+  if (!document.getElementById('page-receivables').classList.contains('page-hidden')) renderReceivables();
+  if (!document.getElementById('page-home').classList.contains('page-hidden')) renderHomeAlerts();
+}
+
+// Upload proof image to Supabase Storage (if cloud) or store locally as base64
+async function uploadProof(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const statusEl = document.getElementById('proof-status');
+  statusEl.textContent = '⏳ Subiendo…';
+
+  // If cloud + storage available, upload there; else fallback to base64 local
+  if (CLOUD.enabled && CLOUD.client && CLOUD.businessId) {
+    try {
+      const path = `${CLOUD.businessId}/${_payingTicketId}_${Date.now()}.jpg`;
+      const { error } = await CLOUD.client.storage.from('comprobantes').upload(path, file, { upsert: true });
+      if (error) throw error;
+      const { data } = CLOUD.client.storage.from('comprobantes').getPublicUrl(path);
+      STORAGE.tickets[_payingTicketId].proofUrl = data.publicUrl;
+      saveToStore();
+      statusEl.textContent = '✓ Comprobante guardado en la nube';
+      renderPaymentSheet();
+      return;
+    } catch (e) {
+      console.warn('Storage upload failed, using local', e);
+      statusEl.textContent = '⚠️ No se pudo subir a la nube, guardando local…';
+    }
+  }
+  // Fallback: store as compressed base64 locally
+  const reader = new FileReader();
+  reader.onload = () => {
+    STORAGE.tickets[_payingTicketId].proofUrl = reader.result;
+    saveToStore();
+    renderPaymentSheet();
+    showToast('✓ Comprobante guardado');
+  };
+  reader.readAsDataURL(file);
+}
+
+/* ===== VISTA POR COBRAR ===== */
+function renderReceivables() {
+  const r = getReceivables();
+  const summary = document.getElementById('receivables-summary');
+  const list = document.getElementById('receivables-list');
+
+  if (r.count === 0) {
+    summary.innerHTML = '';
+    list.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><div class="empty-text">¡Nadie te debe! Todo cobrado.</div></div>';
+    return;
+  }
+
+  summary.innerHTML = `<div class="intel-hero" style="background:linear-gradient(135deg,#D45B4A,#E8954A)">
+    <div class="intel-hero-label">💰 Total por cobrar</div>
+    <div class="intel-hero-value">$${r.totalOwed.toLocaleString('es-MX')}</div>
+    <div class="intel-hero-sub">${r.count} ${r.count===1?'orden pendiente':'órdenes pendientes'}</div>
+  </div>`;
+
+  list.innerHTML = r.pending.map(tk => {
+    const itemsStr = (tk.items||[]).map(i => i.name).join(', ');
+    const urgColor = tk.daysOld >= 21 ? 'var(--red)' : (tk.daysOld >= 10 ? '#E8954A' : 'var(--muted)');
+    let clientBadge = '';
+    if (tk.clientId) {
+      const score = getPayerScore(tk.clientId);
+      if (score.score !== null) clientBadge = `<span class="debt-badge" style="background:${score.color}22;color:${score.color}">${score.icon} ${score.label}</span>`;
+    }
+    return `<div class="insight-card ${tk.daysOld>=21?'urgent':'warn'}" style="display:block">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;color:var(--navy)">${tk.client||'Cliente sin nombre'} ${clientBadge}</div>
+          <div style="font-size:12px;color:var(--muted);margin:3px 0">${itemsStr}</div>
+          <div style="font-size:12px;color:${urgColor};font-weight:600">⏱️ hace ${tk.daysOld} ${tk.daysOld===1?'día':'días'}${tk.status==='parcial'?' · abono parcial':''}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--display);font-weight:800;font-size:18px;color:var(--red)">$${tk.balance.toLocaleString('es-MX')}</div>
+          <button class="pay-action" style="margin-top:6px" onclick="openPaymentSheet('${tk.id}')">Cobrar</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
 
 /* ===== Init ===== */
 loadFromStore();
