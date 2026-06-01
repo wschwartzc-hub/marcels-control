@@ -1431,8 +1431,8 @@
        Pega aquí tus dos llaves de Supabase (Project Settings → API).
        Mientras estén vacías, la app funciona en modo LOCAL (como antes).
     ===================================================== */
-    window.SUPABASE_URL  = "";   // ej: https://abcdxyz.supabase.co
-    window.SUPABASE_ANON = "";   // ej: eyJhbGci...
+    window.SUPABASE_URL  = "https://hygzjoyexwyoucgkmncv.supabase.co";
+    window.SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh5Z3pqb3lleHd5b3VjZ2ttbmN2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNDMxOTUsImV4cCI6MjA5NTkxOTE5NX0.2Ab4f22eGsWGOv4AZBd04cpX1ZilaEsRpkmO4SXhTq8";
   </script>
 </head>
 <body>
@@ -2353,6 +2353,11 @@ function initCloud() {
     CLOUD.enabled = false;
     return false;
   }
+  // The Supabase library loads from a CDN — it may not be ready yet (slow net)
+  if (!window.supabase || !window.supabase.createClient) {
+    CLOUD.enabled = false;
+    return false;
+  }
   try {
     CLOUD.client = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON);
     CLOUD.enabled = true;
@@ -2362,6 +2367,25 @@ function initCloud() {
     CLOUD.enabled = false;
     return false;
   }
+}
+
+// Wait for the Supabase CDN library to be available (up to ~8s), then init.
+function waitForSupabaseLib(maxMs) {
+  maxMs = maxMs || 8000;
+  return new Promise((resolve) => {
+    if (!cloudConfigured()) { resolve(false); return; }
+    if (window.supabase && window.supabase.createClient) { resolve(true); return; }
+    let waited = 0;
+    const step = 200;
+    const timer = setInterval(() => {
+      waited += step;
+      if (window.supabase && window.supabase.createClient) {
+        clearInterval(timer); resolve(true);
+      } else if (waited >= maxMs) {
+        clearInterval(timer); resolve(false);
+      }
+    }, step);
+  });
 }
 
 // ---- AUTH ----
@@ -6383,21 +6407,42 @@ saveLocalOnly();
 
 // Cloud boot: if configured, require login. Otherwise run local.
 (async function bootCloud() {
-  if (initCloud()) {
-    // Check for existing session
-    const { data } = await CLOUD.client.auth.getSession();
-    if (data && data.session) {
-      await onAuthSuccess(data.session.user);
+  if (cloudConfigured()) {
+    // Wait for the Supabase library from the CDN (needs internet)
+    const libReady = await waitForSupabaseLib(8000);
+    if (libReady && initCloud()) {
+      try {
+        const { data } = await CLOUD.client.auth.getSession();
+        if (data && data.session) {
+          await onAuthSuccess(data.session.user);
+        } else {
+          // Show login screen
+          document.getElementById('auth-screen').style.display = 'flex';
+          setTimeout(() => { const e = document.getElementById('auth-email'); if(e) e.focus(); }, 100);
+        }
+      } catch (e) {
+        // Cloud configured but can't reach it — fall back to local with a note
+        showCloudOfflineNote();
+      }
     } else {
-      // Show login screen
-      document.getElementById('auth-screen').style.display = 'flex';
-      setTimeout(() => { const e = document.getElementById('auth-email'); if(e) e.focus(); }, 100);
+      // Library never loaded (no internet / CDN blocked) — run local
+      showCloudOfflineNote();
     }
   }
   // Whether cloud or not, render the app behind
   renderHomeAlerts();
   updateStatusBar();
 })();
+
+function showCloudOfflineNote() {
+  // Cloud is set up but unreachable right now. Keep working locally.
+  // Hide the login screen so the user isn't stuck.
+  const auth = document.getElementById('auth-screen');
+  if (auth) auth.style.display = 'none';
+  setTimeout(() => {
+    try { showToast('📵 Sin conexión a la nube — trabajando local. Sincroniza al volver el internet.'); } catch(e) {}
+  }, 1000);
+}
 </script>
 </body>
 </html>
