@@ -1281,6 +1281,16 @@
     outline: none;
   }
 
+  .tier-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
   /* === Intelligence module === */
   .intel-hero {
     background: linear-gradient(135deg, var(--navy), var(--teal));
@@ -1413,8 +1423,46 @@
     z-index: 30;
   }
 </style>
+  <!-- Supabase (sincronización en la nube) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    /* =====================================================
+       👉 CONFIGURACIÓN DE LA NUBE
+       Pega aquí tus dos llaves de Supabase (Project Settings → API).
+       Mientras estén vacías, la app funciona en modo LOCAL (como antes).
+    ===================================================== */
+    window.SUPABASE_URL  = "";   // ej: https://abcdxyz.supabase.co
+    window.SUPABASE_ANON = "";   // ej: eyJhbGci...
+  </script>
 </head>
 <body>
+  <!-- Pantalla de login (solo aparece si la nube está configurada) -->
+  <div id="auth-screen" style="display:none;position:fixed;inset:0;z-index:9999;background:linear-gradient(160deg,#0B3B47,#1A8C8C);flex-direction:column;align-items:center;justify-content:center;padding:32px;overflow-y:auto">
+    <div style="font-family:'Plus Jakarta Sans',sans-serif;color:white;max-width:360px;width:100%;text-align:center">
+      <div style="font-size:52px;margin-bottom:8px">🦐</div>
+      <div style="font-weight:800;font-size:28px;letter-spacing:-0.02em;margin-bottom:4px">Marcel's</div>
+      <div style="font-size:14px;opacity:.8;margin-bottom:28px" id="auth-subtitle">Inicia sesión para continuar</div>
+
+      <input type="email" id="auth-email" placeholder="Correo" autocomplete="email"
+        style="width:100%;padding:15px;border-radius:14px;border:none;font-size:16px;font-family:inherit;margin-bottom:10px;box-sizing:border-box">
+      <input type="password" id="auth-password" placeholder="Contraseña" autocomplete="current-password"
+        style="width:100%;padding:15px;border-radius:14px;border:none;font-size:16px;font-family:inherit;margin-bottom:14px;box-sizing:border-box"
+        onkeydown="if(event.key==='Enter')authSignIn()">
+
+      <button id="auth-signin-btn" onclick="authSignIn()"
+        style="width:100%;padding:16px;border-radius:14px;border:none;background:#F08A5D;color:white;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:10px">
+        Entrar
+      </button>
+      <button id="auth-signup-btn" onclick="authSignUp()"
+        style="width:100%;padding:14px;border-radius:14px;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:white;font-size:15px;font-weight:600;font-family:inherit;cursor:pointer">
+        Crear cuenta nueva
+      </button>
+
+      <div id="auth-error" style="color:#FFD2C2;font-size:13px;margin-top:14px;min-height:18px"></div>
+      <div id="auth-loading" style="color:white;font-size:13px;margin-top:8px;opacity:.8;display:none">⏳ Conectando…</div>
+    </div>
+  </div>
+
 
 <div class="app">
 
@@ -1442,6 +1490,7 @@
     <div class="menu-item" onclick="exportCSV(); toggleMenu()">📥 Exportar a CSV</div>
     <div class="menu-item" onclick="exportXLSX(); toggleMenu()">📊 Exportar a Excel</div>
     <div class="menu-item" onclick="showAbout(); toggleMenu()">ℹ️ Acerca de</div>
+    <div class="menu-item" id="menu-account-item" onclick="handleAccountClick(); toggleMenu()" style="display:none">👤 Cuenta</div>
     <div class="menu-item danger" onclick="resetAll(); toggleMenu()">🗑️ Borrar todo</div>
   </div>
   <input type="file" id="fileImport" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleImport(event)">
@@ -1926,7 +1975,7 @@
     <div id="cart-checkout-section" style="display:none">
       <div class="section-label" style="margin-top:18px">Cliente</div>
       <div id="cart-client-display" style="margin-bottom:10px"></div>
-      <button class="btn btn-ghost" onclick="openClientPicker()" id="cart-client-btn">+ Seleccionar cliente (opcional)</button>
+      <button class="btn btn-ghost" onclick="openClientPicker()" id="cart-client-btn" style="border:1.5px dashed var(--teal);color:var(--teal)">👤 Ligar a un cliente</button>
 
       <div class="section-label" style="margin-top:18px">Método de pago</div>
       <div class="options" style="gap:8px">
@@ -1948,7 +1997,7 @@
     <h2>Elegir cliente</h2>
     <p class="subtitle" style="margin-bottom:14px">O crea uno nuevo abajo.</p>
 
-    <input type="text" class="input" id="client-search" placeholder="Buscar por nombre o #…" oninput="renderClientPicker()" style="margin-bottom:14px">
+    <input type="text" class="input" id="client-search" placeholder="Buscar por nombre, # o celular…" oninput="renderClientPicker()" style="margin-bottom:14px" autocomplete="off">
 
     <div id="client-picker-list" style="max-height:50vh;overflow-y:auto"></div>
 
@@ -1967,8 +2016,9 @@
       <input type="text" class="input" id="new-client-name" placeholder="Ej: Raúl Treviño" autocomplete="off">
     </div>
     <div class="input-group">
-      <label class="input-label">Teléfono (opcional)</label>
-      <input type="tel" class="input" id="new-client-phone" placeholder="81 1234 5678" autocomplete="off">
+      <label class="input-label">Celular</label>
+      <input type="tel" class="input" id="new-client-phone" placeholder="81 1234 5678" autocomplete="off" inputmode="tel">
+      <div class="yield-note">Sirve para buscarlo rápido y mandarle WhatsApp. Recomendado.</div>
     </div>
 
     <button class="btn btn-coral" onclick="saveNewClient()">✓ Crear cliente</button>
@@ -2106,6 +2156,9 @@
     <div class="section-label">🌦️ Efecto del clima</div>
     <div id="intel-weather"></div>
 
+    <div class="section-label">👥 Clientes que mueven tu negocio</div>
+    <div id="intel-clients"></div>
+
     <div class="section-label">💡 Acciones recomendadas</div>
     <div id="intel-actions"></div>
   </main>
@@ -2201,6 +2254,13 @@
     <button class="btn btn-ghost" style="margin-top:10px" onclick="closeSheet()">Cerrar</button>
   </div>
 
+  <!-- Client detail sheet -->
+  <div class="sheet" id="client-detail-sheet" style="max-height:90vh">
+    <div class="sheet-handle"></div>
+    <div id="client-detail-body" style="max-height:80vh;overflow-y:auto"></div>
+    <button class="btn btn-ghost" style="margin-top:14px" onclick="closeSheet()">Cerrar</button>
+  </div>
+
   <!-- All alerts sheet -->
   <div class="sheet" id="all-alerts-sheet" style="max-height:85vh">
     <div class="sheet-handle"></div>
@@ -2255,6 +2315,250 @@ break;case"<bookViews":;case"<bookViews>":;case"</bookViews>":break;case"<workbo
 
 </script>
 <script>
+
+/* ===================================================================
+   ☁️ CAPA DE NUBE — Supabase Auth + Sync + Offline
+   Si SUPABASE_URL/ANON están vacías, la app corre en modo LOCAL.
+=================================================================== */
+var CLOUD = {
+  enabled: false,
+  client: null,
+  user: null,
+  businessId: null,
+  role: null,
+  syncing: false,
+  pendingPush: false
+};
+
+// Tables that sync as collections of {id, data}
+var SYNC_TABLES = {
+  menu: 'menu_items',
+  sales: 'sales',
+  expenses: 'expenses',
+  clients: 'clients',
+  ingredients: 'ingredients',
+  purchases: 'purchases'
+};
+// Singleton blobs stored in business_data
+var SYNC_BLOBS = ['recipes', 'dayLog', 'meta'];
+
+function cloudConfigured() {
+  return !!(window.SUPABASE_URL && window.SUPABASE_ANON &&
+            window.SUPABASE_URL.indexOf('http') === 0);
+}
+
+function initCloud() {
+  if (!cloudConfigured()) {
+    // No cloud configured — run purely local (legacy behavior)
+    CLOUD.enabled = false;
+    return false;
+  }
+  try {
+    CLOUD.client = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON);
+    CLOUD.enabled = true;
+    return true;
+  } catch (e) {
+    console.warn('Supabase init failed', e);
+    CLOUD.enabled = false;
+    return false;
+  }
+}
+
+// ---- AUTH ----
+async function authSignIn() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const err = document.getElementById('auth-error');
+  err.textContent = '';
+  if (!email || !password) { err.textContent = 'Pon correo y contraseña'; return; }
+  showAuthLoading(true);
+  try {
+    const { data, error } = await CLOUD.client.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    await onAuthSuccess(data.user);
+  } catch (e) {
+    err.textContent = '❌ ' + traduceAuthError(e.message);
+  } finally {
+    showAuthLoading(false);
+  }
+}
+
+async function authSignUp() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const err = document.getElementById('auth-error');
+  err.textContent = '';
+  if (!email || !password) { err.textContent = 'Pon correo y contraseña'; return; }
+  if (password.length < 6) { err.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+  showAuthLoading(true);
+  try {
+    const { data, error } = await CLOUD.client.auth.signUp({ email, password });
+    if (error) throw error;
+    if (data.user && !data.session) {
+      err.textContent = '✓ Cuenta creada. Revisa tu correo para confirmar, luego entra.';
+    } else if (data.session) {
+      err.style.color = '#C8F0D2';
+      err.textContent = '✓ Cuenta creada. Avisa al dueño para vincularte al negocio.';
+      await onAuthSuccess(data.user);
+    }
+  } catch (e) {
+    err.textContent = '❌ ' + traduceAuthError(e.message);
+  } finally {
+    showAuthLoading(false);
+  }
+}
+
+function handleAccountClick() {
+  if (CLOUD.enabled && CLOUD.user) {
+    const email = CLOUD.user.email || '';
+    const roleTxt = CLOUD.role === 'dueno' ? 'Dueño' : 'Cajero';
+    if (confirm(`Sesión: ${email}\nRol: ${roleTxt}\n\n¿Cerrar sesión?`)) {
+      authSignOut();
+    }
+  }
+}
+
+async function authSignOut() {
+  if (CLOUD.client) await CLOUD.client.auth.signOut();
+  CLOUD.user = null; CLOUD.businessId = null; CLOUD.role = null;
+  location.reload();
+}
+
+function traduceAuthError(msg) {
+  msg = (msg||'').toLowerCase();
+  if (msg.includes('invalid login')) return 'Correo o contraseña incorrectos';
+  if (msg.includes('already registered')) return 'Ese correo ya tiene cuenta. Inicia sesión.';
+  if (msg.includes('email not confirmed')) return 'Confirma tu correo antes de entrar.';
+  if (msg.includes('network')) return 'Sin conexión. Revisa tu internet.';
+  return msg || 'Error desconocido';
+}
+
+function showAuthLoading(on) {
+  document.getElementById('auth-loading').style.display = on ? 'block' : 'none';
+  document.getElementById('auth-signin-btn').disabled = on;
+  document.getElementById('auth-signup-btn').disabled = on;
+}
+
+async function onAuthSuccess(user) {
+  CLOUD.user = user;
+  // Find which business this user belongs to
+  const { data: mem, error } = await CLOUD.client
+    .from('members').select('business_id, role').eq('user_id', user.id).maybeSingle();
+  if (error) { document.getElementById('auth-error').textContent = '❌ ' + error.message; return; }
+  if (!mem) {
+    document.getElementById('auth-error').style.color = '#FFD2C2';
+    document.getElementById('auth-error').textContent = '⚠️ Tu cuenta existe pero no está vinculada a un negocio. Pide al dueño que te dé acceso.';
+    return;
+  }
+  CLOUD.businessId = mem.business_id;
+  CLOUD.role = mem.role;
+  // Hide auth screen
+  document.getElementById('auth-screen').style.display = 'none';
+  // Pull cloud data, then start the app
+  await cloudInitialSync();
+  startRealtime();
+  // Show account option in menu + cloud indicator
+  const accItem = document.getElementById('menu-account-item');
+  if (accItem) accItem.style.display = 'block';
+  refreshCurrentPage();
+  showToast('☁️ Conectado a la nube');
+}
+
+// ---- SYNC: pull everything from cloud into STORAGE ----
+async function cloudPull() {
+  if (!CLOUD.enabled || !CLOUD.businessId) return;
+  const c = CLOUD.client, bid = CLOUD.businessId;
+  for (const [localKey, table] of Object.entries(SYNC_TABLES)) {
+    const { data, error } = await c.from(table).select('id, data').eq('business_id', bid);
+    if (!error && data) {
+      STORAGE[localKey] = data.map(r => r.data);
+    }
+  }
+  // Blobs
+  const { data: blobs } = await c.from('business_data').select('key, data').eq('business_id', bid);
+  if (blobs) {
+    blobs.forEach(b => { STORAGE[b.key] = b.data; });
+  }
+  saveLocalOnly();
+}
+
+// First sync: if cloud empty but we have local data, offer to upload it
+async function cloudInitialSync() {
+  CLOUD.syncing = true;
+  try {
+    // Check if cloud has any data
+    const { count } = await CLOUD.client.from('menu_items')
+      .select('id', { count:'exact', head:true }).eq('business_id', CLOUD.businessId);
+    const cloudEmpty = !count || count === 0;
+    const localHasData = (STORAGE.sales && STORAGE.sales.length) || (STORAGE.menu && STORAGE.menu.length);
+
+    if (cloudEmpty && localHasData) {
+      if (confirm('Tienes datos en este dispositivo. ¿Subirlos a la nube ahora? (Recomendado la primera vez)')) {
+        await cloudPushAll();
+      } else {
+        await cloudPull();
+      }
+    } else {
+      await cloudPull();
+    }
+  } catch(e) {
+    console.warn('Initial sync issue', e);
+    showToast('⚠️ Sin conexión a la nube — modo local');
+  } finally {
+    CLOUD.syncing = false;
+  }
+}
+
+// Push ALL local data to cloud (used on first upload)
+async function cloudPushAll() {
+  if (!CLOUD.enabled || !CLOUD.businessId) return;
+  const c = CLOUD.client, bid = CLOUD.businessId;
+  for (const [localKey, table] of Object.entries(SYNC_TABLES)) {
+    const rows = (STORAGE[localKey]||[]).map(item => ({ id:item.id, business_id:bid, data:item }));
+    if (rows.length) {
+      const { error } = await c.from(table).upsert(rows);
+      if (error) console.warn('push '+table, error);
+    }
+  }
+  for (const key of SYNC_BLOBS) {
+    if (STORAGE[key] !== undefined) {
+      await c.from('business_data').upsert({ business_id:bid, key:key, data:STORAGE[key] });
+    }
+  }
+  showToast('☁️ Datos subidos a la nube');
+}
+
+// Realtime: listen for changes from OTHER devices
+function startRealtime() {
+  if (!CLOUD.enabled || !CLOUD.businessId) return;
+  const c = CLOUD.client;
+  c.channel('marcels-' + CLOUD.businessId)
+    .on('postgres_changes', { event:'*', schema:'public' }, payload => {
+      // Another device changed something — pull fresh data (debounced)
+      clearTimeout(window._rtTimer);
+      window._rtTimer = setTimeout(async () => {
+        await cloudPull();
+        refreshCurrentPage();
+      }, 800);
+    })
+    .subscribe();
+}
+
+function refreshCurrentPage() {
+  const active = document.querySelector('.page:not(.page-hidden)');
+  if (!active) return;
+  const id = active.id.replace('page-','');
+  try {
+    if (id === 'home') { renderHomeAlerts(); updateStatusBar(); }
+    if (id === 'dashboard') renderDashboard();
+    if (id === 'pos') renderPosGrid();
+    if (id === 'clients') renderClientsList();
+    if (id === 'insumos') renderInsumos();
+    if (id === 'intel') renderIntel();
+    if (id === 'menu-manage') renderMenuList(currentMenuFilter);
+  } catch(e) {}
+}
+
 /* ===================================================================
    STORAGE — in-memory only (no localStorage in artifacts environment).
    In a real device this would persist; the app exports to CSV which IS the persistence.
@@ -2273,8 +2577,26 @@ const STORAGE = {
 };
 
 const STORAGE_KEY = 'marcels_data_v1';
-function saveToStore() {
+function saveLocalOnly() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STORAGE)); } catch(e) { console.warn('Save failed', e); }
+}
+
+function saveToStore() {
+  // Always save locally first (instant + offline safe)
+  saveLocalOnly();
+  // Then push to cloud if connected
+  if (CLOUD.enabled && CLOUD.businessId && !CLOUD.syncing) {
+    cloudPushDebounced();
+  }
+}
+
+// Debounced cloud push — avoids hammering the network on rapid changes
+var _pushTimer = null;
+function cloudPushDebounced() {
+  clearTimeout(_pushTimer);
+  _pushTimer = setTimeout(() => { cloudPushAll().catch(e => {
+    console.warn('Cloud push failed (guardado local OK)', e);
+  }); }, 1200);
 }
 function loadFromStore() {
   try {
@@ -3904,12 +4226,21 @@ function confirmSale() {
     }
   });
 
-  // Update client stats
+  // Update client stats + purchase intelligence
   if (client) {
     const total = posState.cart.reduce((s,c) => s + c.price*c.qty, 0);
     client.totalSpent = (client.totalSpent || 0) + total;
     client.visits = (client.visits || 0) + 1;
     client.lastVisit = now;
+    // Track item frequency for preferences/suggestions
+    if (!client.itemCounts) client.itemCounts = {};
+    posState.cart.forEach(c => {
+      client.itemCounts[c.itemId] = (client.itemCounts[c.itemId] || 0) + c.qty;
+    });
+    // Track order value history (for "ticket promedio" of this client)
+    if (!client.orderHistory) client.orderHistory = [];
+    client.orderHistory.push({ date: now, total: total });
+    if (client.orderHistory.length > 50) client.orderHistory.shift(); // cap
   }
 
   const totalSale = posState.cart.reduce((s,c) => s + c.price*c.qty, 0);
@@ -3953,15 +4284,20 @@ function renderClientPicker() {
     return;
   }
 
-  document.getElementById('client-picker-list').innerHTML = clients.map(c => `
+  document.getElementById('client-picker-list').innerHTML = clients.map(c => {
+    const tier = (typeof getClientTier === 'function') ? getClientTier(c) : null;
+    const tierBadge = tier ? `<span class="tier-badge" style="background:${tier.color}22;color:${tier.color}">${tier.icon}</span>` : '';
+    const phoneStr = c.phone ? `📱 ${c.phone}` : 'sin celular';
+    return `
     <div class="client-card" onclick="setSaleClient('${c.id}');closeSheet()">
       <div class="client-num">#${String(c.num).padStart(3,'0')}</div>
       <div class="client-info">
-        <div class="client-name">${c.name}</div>
-        <div class="client-stats">${c.visits||0} ${(c.visits||0)===1?'visita':'visitas'} · Gasto: $${(c.totalSpent||0).toLocaleString('es-MX')}</div>
+        <div class="client-name">${c.name} ${tierBadge}</div>
+        <div class="client-stats">${phoneStr} · ${c.visits||0} ${(c.visits||0)===1?'visita':'visitas'}</div>
       </div>
-    </div>
-  `).join('');
+      <div class="client-spent">$${(c.totalSpent||0).toLocaleString('es-MX')}</div>
+    </div>`;
+  }).join('');
 }
 
 function openNewClient() {
@@ -4030,15 +4366,149 @@ function renderClientsList() {
     const lastVisitStr = c.lastVisit
       ? new Date(c.lastVisit).toLocaleDateString('es-MX', { day:'numeric', month:'short' })
       : 'Nunca ha comprado';
-    return `<div class="client-card">
+    const tier = getClientTier(c);
+    return `<div class="client-card" onclick="openClientDetail('${c.id}')" style="cursor:pointer">
       <div class="client-num">#${String(c.num).padStart(3,'0')}</div>
       <div class="client-info">
-        <div class="client-name">${c.name}</div>
+        <div class="client-name">${c.name} <span class="tier-badge" style="background:${tier.color}22;color:${tier.color}">${tier.icon} ${tier.label}</span></div>
         <div class="client-stats">${c.visits||0} ${(c.visits||0)===1?'visita':'visitas'} · Última: ${lastVisitStr}</div>
       </div>
       <div class="client-spent">$${(c.totalSpent||0).toLocaleString('es-MX')}</div>
     </div>`;
   }).join('');
+}
+
+function buildClientBehaviorHtml(clientId) {
+  const b = getClientBehavior(clientId);
+  if (!b.hasData) {
+    return '<div class="insight-card"><div class="insight-icon">📊</div><div class="insight-body"><div class="insight-title">Aún sin patrón</div><div class="insight-text">Liga más ventas a este cliente para ver su frecuencia y horarios.</div></div></div>';
+  }
+
+  // Trend visual
+  let trendStr = '';
+  if (b.trend === 'subiendo') trendStr = '<span style="color:var(--green);font-weight:700">📈 Viniendo más seguido</span>';
+  else if (b.trend === 'bajando') trendStr = '<span style="color:var(--red);font-weight:700">📉 Viniendo menos</span>';
+  else if (b.trend === 'estable') trendStr = '<span style="color:var(--muted);font-weight:700">➡️ Estable</span>';
+
+  const freqStr = describeFrequency(b.avgDaysBetween);
+  const hourStr = b.peakHour !== null ? `${b.peakHour}:00 hrs` : '—';
+  const dayStr = b.peakDay !== null ? DAY_NAMES_FULL[b.peakDay] : '—';
+
+  // Alert if a regular is overdue (avgDaysBetween known and daysSinceLast > 1.5x)
+  let overdueAlert = '';
+  if (b.avgDaysBetween && b.daysSinceLast > b.avgDaysBetween * 1.6 && b.visits >= 3) {
+    overdueAlert = `<div style="font-size:13px;color:var(--navy);margin-top:10px;background:#FFF3E0;padding:10px;border-radius:10px">⏰ Suele venir cada ${Math.round(b.avgDaysBetween)} días, pero ya pasaron ${Math.round(b.daysSinceLast)}. Buen momento para un mensaje.</div>`;
+  }
+
+  return `<div class="insight-card" style="display:block">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Frecuencia</div>
+        <div style="font-weight:700;font-size:14px;color:var(--navy)">${freqStr}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Tendencia</div>
+        <div style="font-size:14px">${trendStr || '—'}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Hora preferida</div>
+        <div style="font-weight:700;font-size:14px;color:var(--navy)">🕐 ${hourStr}</div>
+      </div>
+      <div>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Día preferido</div>
+        <div style="font-weight:700;font-size:14px;color:var(--navy)">📅 ${dayStr}</div>
+      </div>
+    </div>
+    ${overdueAlert}
+  </div>`;
+}
+
+function openClientDetail(clientId) {
+  const c = STORAGE.clients.find(x => x.id === clientId);
+  if (!c) return;
+  const tier = getClientTier(c);
+  const favs = getClientFavorites(c, 3);
+  const sug = getClientSuggestion(c);
+  const avgTicket = getClientAvgTicket(c);
+  const lastVisitStr = c.lastVisit
+    ? new Date(c.lastVisit).toLocaleDateString('es-MX', { weekday:'long', day:'numeric', month:'long' })
+    : 'Nunca';
+
+  let favsHtml = '';
+  if (favs.length > 0) {
+    favsHtml = favs.map((f,i) =>
+      `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--soft)">
+        <span style="font-size:14px">${i===0?'🥇':i===1?'🥈':'🥉'} ${f.item.name}</span>
+        <span style="color:var(--muted);font-size:13px">${f.count}x</span>
+      </div>`
+    ).join('');
+  } else {
+    favsHtml = '<div style="color:var(--muted);font-size:13px;padding:8px 0">Aún sin pedidos registrados con productos.</div>';
+  }
+
+  const phoneHtml = c.phone
+    ? `<div style="font-size:13px;color:var(--muted)">📱 ${c.phone}</div>`
+    : '<div style="font-size:13px;color:var(--amber)">📱 Sin teléfono — agrégalo para usar WhatsApp</div>';
+
+  document.getElementById('client-detail-body').innerHTML = `
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+      <div class="client-num" style="width:56px;height:56px;font-size:16px">#${String(c.num).padStart(3,'0')}</div>
+      <div style="flex:1">
+        <div style="font-family:var(--display);font-weight:800;font-size:20px;color:var(--navy)">${c.name}</div>
+        <span class="tier-badge" style="background:${tier.color}22;color:${tier.color};font-size:12px">${tier.icon} ${tier.label} · ${tier.desc}</span>
+      </div>
+    </div>
+    ${phoneHtml}
+
+    <div class="kpi-grid" style="margin:16px 0">
+      <div class="kpi"><div class="kpi-label">Visitas</div><div class="kpi-value">${c.visits||0}</div></div>
+      <div class="kpi"><div class="kpi-label">Gasto total</div><div class="kpi-value">$${(c.totalSpent||0).toLocaleString('es-MX')}</div></div>
+      <div class="kpi"><div class="kpi-label">Ticket promedio</div><div class="kpi-value">$${avgTicket.toFixed(0)}</div></div>
+      <div class="kpi"><div class="kpi-label">Última visita</div><div class="kpi-value" style="font-size:14px">${lastVisitStr}</div></div>
+    </div>
+
+    <div class="section-label">Su comportamiento</div>
+    ${buildClientBehaviorHtml(c.id)}
+
+    <div class="section-label">Sus favoritos</div>
+    <div class="insight-card" style="display:block">${favsHtml}</div>
+
+    <div class="section-label">Sugerencia inteligente</div>
+    <div class="insight-card good">
+      <div class="insight-icon">${sug.icon}</div>
+      <div class="insight-body">
+        <div class="insight-title">${sug.title}</div>
+        <div class="insight-text">${sug.text}</div>
+      </div>
+    </div>
+
+    <button class="btn btn-coral" style="margin-top:14px;background:#25D366;box-shadow:0 4px 14px rgba(37,211,102,.3)" onclick="sendClientWhatsApp('${c.id}')">
+      💬 Enviar promo por WhatsApp
+    </button>
+    <button class="btn btn-ghost" style="margin-top:10px" onclick="sendRepeatOrder('${c.id}')">
+      🔁 "¿Lo de siempre?" por WhatsApp
+    </button>
+    <button class="btn btn-ghost" style="margin-top:10px" onclick="editClientPhone('${c.id}')">
+      ✏️ Editar teléfono / nombre
+    </button>
+  `;
+  document.getElementById('sheet-backdrop').classList.add('active');
+  document.getElementById('client-detail-sheet').classList.add('active');
+}
+
+function editClientPhone(clientId) {
+  const c = STORAGE.clients.find(x => x.id === clientId);
+  if (!c) return;
+  const newName = prompt('Nombre del cliente:', c.name);
+  if (newName === null) return;
+  const newPhone = prompt('Teléfono (10 dígitos, para WhatsApp):', c.phone || '');
+  if (newPhone === null) return;
+  c.name = newName.trim() || c.name;
+  c.phone = newPhone.trim();
+  saveToStore();
+  closeSheet();
+  showToast('✓ Cliente actualizado');
+  renderClientsList();
 }
 
 /* ===================================================================
@@ -5064,6 +5534,7 @@ function renderIntel() {
   renderIntelPurchases();
   renderIntelHourmap();
   renderIntelWeather();
+  renderIntelClients();
   renderIntelActions();
   renderIntelHeadline();
 }
@@ -5278,6 +5749,69 @@ function renderIntelWeather() {
   }
 
   el.innerHTML = todayCard + logBtn + table;
+}
+
+function renderIntelClients() {
+  const el = document.getElementById('intel-clients');
+  const data = getSalesByTier(90);
+
+  if (data.totalAll === 0) {
+    el.innerHTML = '<div class="insight-card"><div class="insight-icon">👥</div><div class="insight-body"><div class="insight-title">Sin datos aún</div><div class="insight-text">Liga ventas a clientes para ver qué tipo de cliente mueve tu negocio.</div></div></div>';
+    return;
+  }
+
+  const linkedPct = data.totalAll > 0 ? (data.totalLinked / data.totalAll) * 100 : 0;
+
+  // Sort tiers by total sales
+  const tiers = Object.entries(data.byTier).sort((a,b) => b[1].total - a[1].total);
+
+  let rows = tiers.map(([tier, d]) => {
+    const info = TIER_INFO[tier] || { label:tier, icon:'', color:'#888' };
+    const pct = data.totalLinked > 0 ? (d.total / data.totalLinked) * 100 : 0;
+    // Weekend vs weekday split for this tier
+    const we = data.byTierWeekend[tier] || 0;
+    const wd = data.byTierWeekday[tier] || 0;
+    const total = we + wd;
+    const wePct = total > 0 ? (we/total)*100 : 0;
+    // Peak hour for this tier
+    const hours = data.byTierHour[tier] || [];
+    let ph = 0, phv = 0;
+    hours.forEach((v,h) => { if (v > phv) { phv = v; ph = h; } });
+
+    return `<div class="insight-card" style="display:block">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:700;color:var(--navy)">${info.icon} ${info.label}</span>
+        <span style="font-weight:800;color:${info.color}">${pct.toFixed(0)}%</span>
+      </div>
+      <div style="height:8px;background:var(--soft);border-radius:4px;overflow:hidden;margin-bottom:8px">
+        <div style="height:100%;width:${pct}%;background:${info.color}"></div>
+      </div>
+      <div style="font-size:12px;color:var(--muted)">
+        $${d.total.toLocaleString('es-MX')} en ${d.count} ${d.count===1?'venta':'ventas'} ·
+        ${wePct>=55 ? `🎉 sobre todo fin de semana (${wePct.toFixed(0)}%)` : wePct<=45 ? `📆 sobre todo entre semana` : 'parejo semana/finde'} ·
+        pico ${ph}:00
+      </div>
+    </div>`;
+  }).join('');
+
+  // Insight headline: who drives weekend
+  let topWeekendTier = null, topWeekendVal = 0;
+  Object.entries(data.byTierWeekend).forEach(([t,v]) => { if (v > topWeekendVal) { topWeekendVal = v; topWeekendTier = t; } });
+  let insight = '';
+  if (topWeekendTier && topWeekendVal > 0) {
+    const info = TIER_INFO[topWeekendTier];
+    insight = `<div class="insight-card good" style="margin-bottom:10px">
+      <div class="insight-icon">${info.icon}</div>
+      <div class="insight-body">
+        <div class="insight-title">Tus ${info.label} mandan el fin de semana</div>
+        <div class="insight-text">Son el grupo que más vende viernes a domingo. Enfoca tus promos de finde en ellos.</div>
+      </div>
+    </div>`;
+  }
+
+  const linkedNote = `<div style="font-size:12px;color:var(--muted);margin-bottom:10px">📌 ${linkedPct.toFixed(0)}% de tus ventas están ligadas a un cliente. ${linkedPct < 50 ? 'Liga más ventas para análisis más preciso.' : '¡Buen registro!'}</div>`;
+
+  el.innerHTML = insight + linkedNote + rows;
 }
 
 function renderIntelActions() {
@@ -5529,12 +6063,341 @@ setInterval(updateStatusBar, 30000);
 window.addEventListener('online', updateInternetStatus);
 window.addEventListener('offline', updateInternetStatus);
 
+
+/* ===================================================================
+   🤝 INTELIGENCIA DE CLIENTES
+   Lealtad, preferencias, sugerencias dinámicas, WhatsApp
+=================================================================== */
+
+// Loyalty tier based on visits + spend + recency
+function getClientTier(client) {
+  const visits = client.visits || 0;
+  const spent = client.totalSpent || 0;
+  const daysSinceLast = client.lastVisit
+    ? (Date.now() - new Date(client.lastVisit).getTime()) / 86400000
+    : 999;
+
+  // Inactive: hasn't come in 45+ days despite past visits
+  if (visits >= 2 && daysSinceLast > 45) {
+    return { key:'dormido', label:'Dormido', icon:'😴', color:'#8B9491',
+             desc:`No viene hace ${Math.floor(daysSinceLast)} días` };
+  }
+  // VIP: many visits or high spend
+  if (visits >= 10 || spent >= 5000) {
+    return { key:'vip', label:'VIP', icon:'👑', color:'#C9A227',
+             desc:'Cliente estrella' };
+  }
+  // Frecuente
+  if (visits >= 5 || spent >= 2000) {
+    return { key:'frecuente', label:'Frecuente', icon:'⭐', color:'#1A8C8C',
+             desc:'Cliente leal' };
+  }
+  // Nuevo
+  if (visits <= 1) {
+    return { key:'nuevo', label:'Nuevo', icon:'🌱', color:'#1A8C5A',
+             desc:'Primer pedido' };
+  }
+  // Regular
+  return { key:'regular', label:'Regular', icon:'🙂', color:'#4FB8B0',
+           desc:`${visits} visitas` };
+}
+
+// Favorite items for a client (top by frequency)
+function getClientFavorites(client, n) {
+  n = n || 3;
+  if (!client.itemCounts) return [];
+  return Object.entries(client.itemCounts)
+    .map(([itemId, count]) => {
+      const item = STORAGE.menu.find(m => m.id === itemId);
+      return item ? { item, count } : null;
+    })
+    .filter(Boolean)
+    .sort((a,b) => b.count - a.count)
+    .slice(0, n);
+}
+
+// Average ticket for this client
+function getClientAvgTicket(client) {
+  if (!client.orderHistory || client.orderHistory.length === 0) {
+    return client.visits > 0 ? (client.totalSpent / client.visits) : 0;
+  }
+  const sum = client.orderHistory.reduce((s,o) => s + o.total, 0);
+  return sum / client.orderHistory.length;
+}
+
+// Dynamic suggestion for a client (what to offer them)
+function getClientSuggestion(client) {
+  const tier = getClientTier(client);
+  const favs = getClientFavorites(client, 1);
+  const fav = favs.length > 0 ? favs[0].item : null;
+
+  // Dormido: win-back
+  if (tier.key === 'dormido') {
+    return {
+      type:'winback', icon:'💌',
+      title:'Reactívalo',
+      text: fav
+        ? `Hace tiempo no viene. Invítale su favorito: ${fav.name}.`
+        : 'Hace tiempo no viene. Mándale un saludo con promo.',
+      waMessage: fav
+        ? `¡Hola ${client.name}! 🦐 Te extrañamos en Marcel's. ¿Se te antoja un ${fav.name} como antes? Pásale que te tenemos algo especial 😉`
+        : `¡Hola ${client.name}! 🦐 Te extrañamos en Marcel's. Pásale que te tenemos promociones esta semana 😉`
+    };
+  }
+  // VIP: reward
+  if (tier.key === 'vip') {
+    return {
+      type:'reward', icon:'🎁',
+      title:'Premia su lealtad',
+      text:`Es de tus mejores clientes ($${(client.totalSpent||0).toLocaleString('es-MX')} en total). Dale un detalle.`,
+      waMessage:`¡Hola ${client.name}! 👑 Como uno de nuestros mejores clientes, en tu próximo pedido te va una sorpresa de la casa. ¡Gracias por tu preferencia! 🦐`
+    };
+  }
+  // Nuevo: convert to repeat
+  if (tier.key === 'nuevo') {
+    return {
+      type:'nurture', icon:'🌱',
+      title:'Conviértelo en frecuente',
+      text:'Apenas hizo su primer pedido. Un buen seguimiento lo vuelve cliente fiel.',
+      waMessage:`¡Hola ${client.name}! 🦐 Gracias por tu primer pedido en Marcel's. Esperamos verte pronto. ¡Cualquier antojo, aquí andamos! 🌊`
+    };
+  }
+  // Frecuente/Regular: upsell their favorite
+  return {
+    type:'upsell', icon:'🔥',
+    title:'Ofrécele lo suyo',
+    text: fav
+      ? `Su favorito es ${fav.name} (${favs[0].count} veces). Avísale cuando esté fresco.`
+      : 'Mándale las novedades o promo del día.',
+    waMessage: fav
+      ? `¡Hola ${client.name}! 🦐 Llegó camarón fresco hoy. ¿Te preparo tu ${fav.name} de siempre? 🔥`
+      : `¡Hola ${client.name}! 🦐 Hoy tenemos todo fresquecito en Marcel's. ¿Qué se te antoja? 🌊`
+  };
+}
+
+// Build a WhatsApp deep link (works on phone, opens chat with prefilled text)
+function waLink(phone, message) {
+  // Clean phone: digits only. Assume Mexico (+52) if 10 digits.
+  let clean = (phone || '').replace(/\D/g, '');
+  if (clean.length === 10) clean = '52' + clean;
+  return `https://wa.me/${clean}?text=${encodeURIComponent(message)}`;
+}
+
+function sendClientWhatsApp(clientId) {
+  const client = STORAGE.clients.find(c => c.id === clientId);
+  if (!client) return;
+  if (!client.phone) { showToast('⚠️ Este cliente no tiene teléfono guardado'); return; }
+  const sug = getClientSuggestion(client);
+  window.open(waLink(client.phone, sug.waMessage), '_blank');
+}
+
+// Quick "repeat order" via WhatsApp — sends their usual
+function sendRepeatOrder(clientId) {
+  const client = STORAGE.clients.find(c => c.id === clientId);
+  if (!client || !client.phone) { showToast('⚠️ Falta teléfono del cliente'); return; }
+  const favs = getClientFavorites(client, 3);
+  let msg;
+  if (favs.length > 0) {
+    const list = favs.map(f => `${f.item.name}`).join(', ');
+    msg = `¡Hola ${client.name}! 🦐 ¿Te preparo lo de siempre? (${list}) Avísame y lo dejo listo 🌊`;
+  } else {
+    msg = `¡Hola ${client.name}! 🦐 ¿Qué se te antoja hoy? Aquí andamos en Marcel's 🌊`;
+  }
+  window.open(waLink(client.phone, msg), '_blank');
+}
+
+
+/* ===================================================================
+   📊 HISTORIAL Y COMPORTAMIENTO DE CLIENTES
+=================================================================== */
+
+// Get all sales linked to a client (by clientId)
+function getClientSales(clientId) {
+  return STORAGE.sales
+    .filter(s => s.clientId === clientId)
+    .sort((a,b) => new Date(a.date) - new Date(b.date));
+}
+
+// Group sales into "visits" (sales within the same ~2h window = one visit/order)
+function getClientVisits(clientId) {
+  const sales = getClientSales(clientId);
+  if (sales.length === 0) return [];
+  const visits = [];
+  let current = null;
+  sales.forEach(s => {
+    const t = new Date(s.date).getTime();
+    if (!current || (t - current.lastT) > 2*60*60*1000) {
+      current = { date: s.date, lastT: t, total: 0, items: [] };
+      visits.push(current);
+    }
+    current.total += s.total;
+    current.items.push({ name: s.itemName, qty: s.qty });
+    current.lastT = t;
+  });
+  return visits;
+}
+
+// Full behavior profile for one client
+function getClientBehavior(clientId) {
+  const visits = getClientVisits(clientId);
+  if (visits.length === 0) {
+    return { visits: 0, hasData: false };
+  }
+
+  // Frequency: average days between visits
+  let avgDaysBetween = null;
+  if (visits.length >= 2) {
+    let totalGap = 0;
+    for (let i = 1; i < visits.length; i++) {
+      totalGap += (new Date(visits[i].date) - new Date(visits[i-1].date)) / 86400000;
+    }
+    avgDaysBetween = totalGap / (visits.length - 1);
+  }
+
+  // Days since last visit
+  const lastVisit = visits[visits.length - 1];
+  const daysSinceLast = (Date.now() - new Date(lastVisit.date).getTime()) / 86400000;
+
+  // Preferred hour (mode of visit hours)
+  const hourCounts = {};
+  visits.forEach(v => {
+    const h = new Date(v.date).getHours();
+    hourCounts[h] = (hourCounts[h] || 0) + 1;
+  });
+  let peakHour = null, peakHourCount = 0;
+  Object.entries(hourCounts).forEach(([h,c]) => { if (c > peakHourCount) { peakHourCount = c; peakHour = +h; } });
+
+  // Preferred weekday
+  const dayCounts = {};
+  visits.forEach(v => {
+    const d = new Date(v.date).getDay();
+    dayCounts[d] = (dayCounts[d] || 0) + 1;
+  });
+  let peakDay = null, peakDayCount = 0;
+  Object.entries(dayCounts).forEach(([d,c]) => { if (c > peakDayCount) { peakDayCount = c; peakDay = +d; } });
+
+  // Trend: compare visit rate in last 30d vs prior 30d
+  const now = Date.now();
+  const recent = visits.filter(v => (now - new Date(v.date).getTime())/86400000 <= 30).length;
+  const prior = visits.filter(v => {
+    const age = (now - new Date(v.date).getTime())/86400000;
+    return age > 30 && age <= 60;
+  }).length;
+  let trend = null;
+  if (prior > 0 || recent > 0) {
+    if (recent > prior) trend = 'subiendo';
+    else if (recent < prior) trend = 'bajando';
+    else trend = 'estable';
+  }
+
+  // Average ticket per visit
+  const avgTicket = visits.reduce((s,v)=>s+v.total,0) / visits.length;
+
+  return {
+    hasData: true,
+    visits: visits.length,
+    avgDaysBetween,
+    daysSinceLast,
+    peakHour, peakHourCount,
+    peakDay, peakDayCount,
+    trend, recent, prior,
+    avgTicket,
+    visitList: visits
+  };
+}
+
+const DAY_NAMES_FULL = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const DAY_NAMES_SHORT = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+function describeFrequency(avgDays) {
+  if (avgDays === null) return 'Primera vez';
+  if (avgDays <= 2) return 'Casi diario';
+  if (avgDays <= 8) return `Cada ${Math.round(avgDays)} días (semanal)`;
+  if (avgDays <= 16) return `Cada ${Math.round(avgDays)} días (quincenal)`;
+  if (avgDays <= 40) return `Cada ${Math.round(avgDays)} días (mensual)`;
+  return `Cada ${Math.round(avgDays)} días (esporádico)`;
+}
+
+/* ===== ANÁLISIS AGREGADO POR NIVEL DE LEALTAD ===== */
+
+// For every sale with a client, attribute it to that client's CURRENT tier
+function getSalesByTier(days) {
+  days = days || 90;
+  const cutoff = Date.now() - days*86400000;
+  // Build clientId -> tier map
+  const tierMap = {};
+  STORAGE.clients.forEach(c => { tierMap[c.id] = getClientTier(c).key; });
+
+  const result = {
+    byTier: {},          // tier -> {total, count, visits}
+    byTierWeekend: {},    // tier -> total on weekends
+    byTierWeekday: {},    // tier -> total on weekdays
+    byTierHour: {},       // tier -> [24] hour totals
+    noClient: { total: 0, count: 0 },
+    totalLinked: 0,
+    totalAll: 0
+  };
+
+  STORAGE.sales.forEach(s => {
+    const t = new Date(s.date).getTime();
+    if (t < cutoff) return;
+    result.totalAll += s.total;
+    if (!s.clientId || !tierMap[s.clientId]) {
+      result.noClient.total += s.total;
+      result.noClient.count += 1;
+      return;
+    }
+    const tier = tierMap[s.clientId];
+    if (!result.byTier[tier]) {
+      result.byTier[tier] = { total:0, count:0 };
+      result.byTierWeekend[tier] = 0;
+      result.byTierWeekday[tier] = 0;
+      result.byTierHour[tier] = new Array(24).fill(0);
+    }
+    result.byTier[tier].total += s.total;
+    result.byTier[tier].count += 1;
+    result.totalLinked += s.total;
+
+    const d = new Date(s.date);
+    const wd = d.getDay();
+    if (wd === 0 || wd === 5 || wd === 6) result.byTierWeekend[tier] += s.total; // Fri/Sat/Sun
+    else result.byTierWeekday[tier] += s.total;
+    result.byTierHour[tier][d.getHours()] += s.total;
+  });
+
+  return result;
+}
+
+const TIER_INFO = {
+  vip:       { label:'VIP', icon:'👑', color:'#C9A227' },
+  frecuente: { label:'Frecuentes', icon:'⭐', color:'#1A8C8C' },
+  regular:   { label:'Regulares', icon:'🙂', color:'#4FB8B0' },
+  nuevo:     { label:'Nuevos', icon:'🌱', color:'#1A8C5A' },
+  dormido:   { label:'Dormidos', icon:'😴', color:'#8B9491' }
+};
+
 /* ===== Init ===== */
 loadFromStore();
 initMenu();
-saveToStore();
-renderHomeAlerts();
-updateStatusBar();
+saveLocalOnly();
+
+// Cloud boot: if configured, require login. Otherwise run local.
+(async function bootCloud() {
+  if (initCloud()) {
+    // Check for existing session
+    const { data } = await CLOUD.client.auth.getSession();
+    if (data && data.session) {
+      await onAuthSuccess(data.session.user);
+    } else {
+      // Show login screen
+      document.getElementById('auth-screen').style.display = 'flex';
+      setTimeout(() => { const e = document.getElementById('auth-email'); if(e) e.focus(); }, 100);
+    }
+  }
+  // Whether cloud or not, render the app behind
+  renderHomeAlerts();
+  updateStatusBar();
+})();
 </script>
 </body>
 </html>
