@@ -1673,6 +1673,9 @@
     <div class="section-label">Top 5 más vendidos</div>
     <div id="top-list"></div>
 
+    <div class="section-label">💳 Desglose por forma de pago</div>
+    <div id="dashboard-payment-breakdown"></div>
+
     <div class="section-label">Punto de equilibrio</div>
     <div class="kpi full">
       <div class="kpi-label">Necesitas vender al menos</div>
@@ -1919,9 +1922,29 @@
             <option value="L">litro</option>
           </select>
         </div>
-        <div class="input-group" style="margin-bottom:0">
+        <div class="input-group">
           <label class="input-label">Alerta cuando baje de</label>
           <input class="input" type="number" inputmode="numeric" id="edit-stock-low" placeholder="Ej: 5 (te avisa al llegar a este número)">
+        </div>
+        <div class="input-group" style="margin-bottom:0;background:var(--cream);padding:12px;border-radius:12px">
+          <label class="input-label" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+            <input type="checkbox" id="edit-has-bulk" onchange="toggleBulkUnit()" style="width:20px;height:20px;accent-color:var(--coral)">
+            📦 Lo compro por mayoreo (ej: tapas, cajas)
+          </label>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px;padding-left:30px">Si compras en una unidad mayor que la de venta. Ej: 1 tapa = 4 six.</p>
+          <div id="bulk-unit-fields" style="display:none;margin-top:10px">
+            <div class="date-range" style="gap:10px">
+              <div style="flex:1.3">
+                <label class="input-label">Nombre del mayoreo</label>
+                <input class="input" type="text" id="edit-bulk-name" placeholder="tapa, caja…" autocomplete="off" oninput="updateBulkEcho()">
+              </div>
+              <div style="flex:1">
+                <label class="input-label">Equivale a</label>
+                <input class="input" type="number" inputmode="numeric" id="edit-bulk-qty" placeholder="4" oninput="updateBulkEcho()">
+              </div>
+            </div>
+            <p style="font-size:12px;color:var(--muted);margin-top:6px">Ej: 1 <strong id="bulk-name-echo">tapa</strong> = <strong id="bulk-qty-echo">4</strong> <span id="bulk-unit-echo">six</span></p>
+          </div>
         </div>
       </div>
     </div>
@@ -1954,9 +1977,12 @@
       <span id="pos-hours-badge" style="font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;letter-spacing:0.05em;text-transform:uppercase;white-space:nowrap;flex-shrink:0;margin-left:8px"></span>
     </div>
 
-    <div class="pos-mode-toggle">
-      <button class="active" data-pos-mode="cart" onclick="setPosMode('cart')">🛒 Carrito</button>
-      <button data-pos-mode="fast" onclick="setPosMode('fast')">⚡ Rápido</button>
+    <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px">
+      <div class="pos-mode-toggle" style="flex:1;margin-bottom:0">
+        <button class="active" data-pos-mode="cart" onclick="setPosMode('cart')">🛒 Carrito</button>
+        <button data-pos-mode="fast" onclick="setPosMode('fast')">⚡ Rápido</button>
+      </div>
+      <button onclick="openManualTicket()" style="white-space:nowrap;font-size:12px;font-weight:700;padding:8px 12px;border-radius:999px;border:1.5px dashed var(--teal);background:transparent;color:var(--teal);cursor:pointer">📝 Cargo libre</button>
     </div>
 
     <div class="pos-search">
@@ -1992,6 +2018,9 @@
 
     <div class="cart-summary" id="cart-summary" style="display:none">
       <div class="cart-line"><span>Items</span><span id="cart-count">0</span></div>
+      <div class="cart-line" id="cart-discount-line" style="display:none;color:var(--green)">
+        <span>Descuento</span><span id="cart-discount-display">-$0</span>
+      </div>
       <div class="cart-line total"><span>Total</span><span id="cart-total">$0</span></div>
     </div>
 
@@ -2006,6 +2035,37 @@
         <button class="option" data-pay="Transferencia" onclick="selectCheckoutPayment('Transferencia')">💳 Transferencia</button>
         <button class="option" data-pay="Tarjeta" onclick="selectCheckoutPayment('Tarjeta')">💳 Tarjeta</button>
         <button class="option" data-pay="Pendiente" onclick="selectCheckoutPayment('Pendiente')">⏳ Pendiente</button>
+      </div>
+
+      <div class="section-label" style="margin-top:18px">Descuento (opcional)</div>
+      <div style="background:var(--white);border:1px solid var(--soft);border-radius:var(--r-md);padding:12px">
+        <div class="date-range" style="gap:10px">
+          <div style="flex:1">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Tipo</label>
+            <select class="select" id="discount-type" onchange="applyDiscount()" style="margin-top:4px">
+              <option value="none">Sin descuento</option>
+              <option value="pct">% Porcentaje</option>
+              <option value="fixed">$ Monto fijo</option>
+            </select>
+          </div>
+          <div style="flex:1" id="discount-value-wrap" style="display:none">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em" id="discount-value-label">Valor</label>
+            <input class="input" type="number" inputmode="decimal" id="discount-value" placeholder="0" oninput="applyDiscount()" style="margin-top:4px">
+          </div>
+        </div>
+        <div id="discount-preview" style="font-size:13px;color:var(--green);margin-top:8px;font-weight:700"></div>
+      </div>
+
+      <div class="section-label" style="margin-top:18px">¿Cuándo fue la venta?</div>
+      <div style="background:var(--white);border:1px solid var(--soft);border-radius:var(--r-md);padding:12px">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px;color:var(--navy)">
+          <input type="checkbox" id="cart-past-toggle" onchange="togglePastDate()" style="width:20px;height:20px;accent-color:var(--coral)">
+          📅 Fue antes (registrar venta de otro día/hora)
+        </label>
+        <div id="cart-past-fields" style="display:none;margin-top:10px">
+          <input type="datetime-local" class="input" id="cart-sale-datetime">
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">El precio nocturno se calcula según esta hora, no la actual.</p>
+        </div>
       </div>
 
       <button class="btn btn-coral" style="margin-top:18px" id="cart-confirm-btn" onclick="confirmSale()" disabled>✓ Cerrar venta</button>
@@ -2285,6 +2345,38 @@
     <button class="btn btn-ghost" style="margin-top:10px" onclick="closeSheet()">Cerrar</button>
   </div>
 
+  <!-- Manual ticket sheet (cargo libre) -->
+  <div class="sheet" id="manual-ticket-sheet" style="max-height:88vh">
+    <div class="sheet-handle"></div>
+    <h2>📝 Cargo libre</h2>
+    <p class="subtitle" style="margin-bottom:16px">Registra una venta o abono sin especificar productos del menú. Útil cuando no recuerdas el desglose.</p>
+
+    <div class="input-group">
+      <label class="input-label">¿Qué fue? (concepto)</label>
+      <input class="input" type="text" id="mt-concept" placeholder="Ej: Orden del sábado, cena familiar…" autocomplete="off">
+    </div>
+    <div class="input-group">
+      <label class="input-label">Total ($)</label>
+      <input class="input" type="number" inputmode="decimal" id="mt-amount" placeholder="Ej: 4000">
+    </div>
+    <div class="input-group">
+      <label class="input-label">Método de pago</label>
+      <div class="options" style="gap:8px">
+        <button class="option active" data-mt-pay="Efectivo" onclick="selectMtPayment('Efectivo')">💵 Efectivo</button>
+        <button class="option" data-mt-pay="Transferencia" onclick="selectMtPayment('Transferencia')">📲 Transf.</button>
+        <button class="option" data-mt-pay="Tarjeta" onclick="selectMtPayment('Tarjeta')">💳 Tarjeta</button>
+        <button class="option" data-mt-pay="Pendiente" onclick="selectMtPayment('Pendiente')">⏳ Pendiente</button>
+      </div>
+    </div>
+    <div class="input-group">
+      <label class="input-label">Cliente (opcional)</label>
+      <input class="input" type="text" id="mt-client" placeholder="Nombre del cliente" autocomplete="off">
+    </div>
+
+    <button class="btn btn-coral" style="margin-top:6px" onclick="saveManualTicket()">✓ Registrar cargo</button>
+    <button class="btn btn-ghost" style="margin-top:10px" onclick="closeSheet()">Cancelar</button>
+  </div>
+
   <!-- Payment sheet -->
   <div class="sheet" id="payment-sheet" style="max-height:90vh">
     <div class="sheet-handle"></div>
@@ -2309,29 +2401,52 @@
   </div>
 
   <!-- Stock adjust sheet -->
-  <div class="sheet" id="stock-sheet">
+  <div class="sheet" id="stock-sheet" style="max-height:92vh;overflow-y:auto">
     <div class="sheet-handle"></div>
-    <h2 id="stock-sheet-title">Ajustar stock</h2>
+    <h2 id="stock-sheet-title">Resurtir</h2>
     <p class="subtitle" style="margin-bottom:14px" id="stock-sheet-sub">Sumar al stock actual o establecer cantidad exacta.</p>
 
-    <div style="text-align:center;margin-bottom:20px">
+    <div style="text-align:center;margin-bottom:18px">
       <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Stock actual</div>
       <div style="font-family:var(--display);font-size:36px;font-weight:600;color:var(--navy)" id="stock-sheet-current">0</div>
     </div>
 
+    <!-- BULK restock (only shown for products with bulkQty) -->
+    <div id="stock-bulk-block" style="display:none;background:var(--cream);padding:14px;border-radius:14px;margin-bottom:14px">
+      <label class="input-label">📦 Compré por mayoreo</label>
+      <div class="date-range" style="gap:10px;margin-top:6px">
+        <input type="number" class="input" id="stock-bulk-qty" inputmode="numeric" placeholder="Ej: 10" oninput="updateRestockEcho()" style="flex:1">
+        <div class="input" style="flex:1.2;display:flex;align-items:center;color:var(--muted);background:var(--white)" id="stock-bulk-unit-label">tapas</div>
+      </div>
+      <p style="font-size:13px;color:var(--teal);font-weight:700;margin-top:8px" id="stock-bulk-echo">= 40 six al stock</p>
+    </div>
+
     <div class="input-group">
-      <label class="input-label">+ Agregar al stock</label>
-      <input type="number" class="input" id="stock-add" inputmode="numeric" placeholder="Ej: 20 (suma al actual)" autocomplete="off">
-      <p style="font-size:12px;color:var(--muted);margin-top:6px">Usa esto cuando llegue mercancía nueva.</p>
+      <label class="input-label">+ Agregar al stock <span id="stock-add-unit" style="color:var(--muted);font-weight:400"></span></label>
+      <input type="number" class="input" id="stock-add" inputmode="numeric" placeholder="Suma al actual" autocomplete="off">
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">En unidades de venta. Se llena solo si usas el mayoreo de arriba.</p>
     </div>
 
     <div class="input-group">
       <label class="input-label">O establecer cantidad exacta</label>
-      <input type="number" class="input" id="stock-set" inputmode="numeric" placeholder="Ej: 35 (reemplaza el actual)" autocomplete="off">
+      <input type="number" class="input" id="stock-set" inputmode="numeric" placeholder="Reemplaza el actual" autocomplete="off">
       <p style="font-size:12px;color:var(--muted);margin-top:6px">Usa esto si hiciste conteo físico.</p>
     </div>
 
-    <button class="btn btn-coral" onclick="applyStockAdjust()">✓ Aplicar</button>
+    <!-- Optional: log as expense -->
+    <div class="input-group" style="background:var(--cream);padding:12px;border-radius:12px;margin-bottom:0">
+      <label class="input-label" style="display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input type="checkbox" id="stock-log-expense" onchange="toggleStockExpense()" style="width:20px;height:20px;accent-color:var(--coral)">
+        💵 Registrar también como gasto (lo que pagué)
+      </label>
+      <div id="stock-expense-fields" style="display:none;margin-top:10px">
+        <input type="number" class="input" id="stock-expense-amount" inputmode="decimal" placeholder="¿Cuánto pagaste en total? $" autocomplete="off">
+        <input type="text" class="input" id="stock-expense-supplier" placeholder="Proveedor (opcional)" autocomplete="off" style="margin-top:8px">
+        <p style="font-size:12px;color:var(--muted);margin-top:6px">Así cuenta en tus gastos y ganancias, sin doble captura.</p>
+      </div>
+    </div>
+
+    <button class="btn btn-coral" style="margin-top:14px" onclick="applyStockAdjust()">✓ Aplicar</button>
     <button class="btn btn-ghost" style="margin-top:10px" onclick="closeSheet()">Cancelar</button>
   </div>
 
@@ -2378,7 +2493,7 @@ var SYNC_TABLES = {
   purchases: 'purchases'
 };
 // Singleton blobs stored in business_data
-var SYNC_BLOBS = ['recipes', 'dayLog', 'meta'];
+var SYNC_BLOBS = ['recipes', 'tickets', 'dayLog', 'meta'];
 
 function cloudConfigured() {
   return !!(window.SUPABASE_URL && window.SUPABASE_ANON &&
@@ -3329,6 +3444,59 @@ function renderDashboard() {
   document.getElementById('kpi-breakeven').textContent = '$' + Math.round(breakeven).toLocaleString('es-MX');
   document.getElementById('kpi-daily').textContent =
     `≈ $${Math.round(breakeven/30).toLocaleString('es-MX')} al día · margen prom. ${(avgMargin*100).toFixed(0)}%`;
+
+  renderPaymentBreakdown(sales);
+}
+
+function renderPaymentBreakdown(sales) {
+  const el = document.getElementById('dashboard-payment-breakdown');
+  if (!el) return;
+  if (sales.length === 0) { el.innerHTML = ''; return; }
+
+  const methods = {};
+  sales.forEach(s => {
+    const m = s.payment || 'Sin registro';
+    methods[m] = (methods[m] || 0) + s.total;
+  });
+
+  const total = Object.values(methods).reduce((a,b)=>a+b,0);
+  const ORDER = ['Efectivo','Transferencia','Tarjeta','Pendiente'];
+  const icons = {Efectivo:'💵',Transferencia:'📲',Tarjeta:'💳',Pendiente:'⏳'};
+  const colorMap = {Efectivo:'#1A8C5A',Transferencia:'#1A8C8C',Tarjeta:'#4527A0',Pendiente:'#E8954A'};
+
+  const entries = Object.entries(methods).sort((a,b) => {
+    const oa = ORDER.indexOf(a[0]), ob = ORDER.indexOf(b[0]);
+    if (oa>-1 && ob>-1) return oa-ob;
+    if (oa>-1) return -1; if (ob>-1) return 1;
+    return b[1]-a[1];
+  });
+
+  el.innerHTML = `
+    <div style="background:var(--white);border-radius:var(--r-md);border:1px solid var(--soft);overflow:hidden;margin-bottom:4px">
+      ${entries.map(([method, amount]) => {
+        const pct = total>0 ? (amount/total)*100 : 0;
+        const icon = icons[method]||'💰';
+        const color = colorMap[method]||'#888';
+        return `<div style="padding:12px 16px;border-bottom:1px solid var(--soft)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <span style="font-weight:700;color:var(--navy)">${icon} ${method}</span>
+            <span style="font-family:var(--display);font-weight:800;color:${color}">$${amount.toLocaleString('es-MX')}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="flex:1;height:6px;background:var(--soft);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:3px"></div>
+            </div>
+            <span style="font-size:12px;color:var(--muted);min-width:38px;text-align:right">${pct.toFixed(0)}%</span>
+          </div>
+        </div>`;
+      }).join('')}
+      <div style="padding:10px 16px;display:flex;justify-content:space-between;background:var(--cream)">
+        <span style="font-size:13px;color:var(--muted)">Total</span>
+        <span style="font-weight:800;color:var(--navy)">$${total.toLocaleString('es-MX')}</span>
+      </div>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:16px">💡 Para tu declaración mensual: Efectivo + Tarjeta. Transferencias y pendientes son aparte.</p>
+  `;
 }
 
 function renderWeekdayChart(sales) {
@@ -3462,8 +3630,12 @@ function editMenuItem(id) {
   document.getElementById('edit-stock-low').value = m.lowThreshold || 0;
   document.getElementById('edit-has-late').checked = (m.priceLate != null);
   document.getElementById('edit-price-late').value = m.priceLate != null ? m.priceLate : '';
+  document.getElementById('edit-has-bulk').checked = (m.bulkQty != null && m.bulkQty > 0);
+  document.getElementById('edit-bulk-name').value = m.bulkName || '';
+  document.getElementById('edit-bulk-qty').value = (m.bulkQty != null) ? m.bulkQty : '';
   toggleStockFields();
   toggleLatePrice();
+  toggleBulkUnit();
   updateEditPreview();
   document.getElementById('edit-cost').oninput = updateEditPreview;
   document.getElementById('edit-price').oninput = updateEditPreview;
@@ -3485,8 +3657,12 @@ function addNewItem() {
   document.getElementById('edit-stock-low').value = 0;
   document.getElementById('edit-has-late').checked = false;
   document.getElementById('edit-price-late').value = '';
+  document.getElementById('edit-has-bulk').checked = false;
+  document.getElementById('edit-bulk-name').value = '';
+  document.getElementById('edit-bulk-qty').value = '';
   toggleStockFields();
   toggleLatePrice();
+  toggleBulkUnit();
   document.getElementById('edit-preview').innerHTML = '';
   document.getElementById('edit-cost').oninput = updateEditPreview;
   document.getElementById('edit-price').oninput = updateEditPreview;
@@ -3502,6 +3678,24 @@ function toggleStockFields() {
 function toggleLatePrice() {
   const has = document.getElementById('edit-has-late').checked;
   document.getElementById('late-price-field').style.display = has ? 'block' : 'none';
+}
+
+function toggleBulkUnit() {
+  const has = document.getElementById('edit-has-bulk').checked;
+  document.getElementById('bulk-unit-fields').style.display = has ? 'block' : 'none';
+  updateBulkEcho();
+}
+
+function updateBulkEcho() {
+  const name = document.getElementById('edit-bulk-name').value || 'tapa';
+  const qty = document.getElementById('edit-bulk-qty').value || '4';
+  const unit = document.getElementById('edit-stock-unit').value || 'six';
+  const ne = document.getElementById('bulk-name-echo');
+  const qe = document.getElementById('bulk-qty-echo');
+  const ue = document.getElementById('bulk-unit-echo');
+  if (ne) ne.textContent = name;
+  if (qe) qe.textContent = qty;
+  if (ue) ue.textContent = unit;
 }
 
 function updateEditPreview() {
@@ -3547,16 +3741,19 @@ function saveMenuItem() {
   const lowThreshold = parseInt(document.getElementById('edit-stock-low').value) || 0;
   const hasLate = document.getElementById('edit-has-late').checked;
   const priceLate = hasLate ? (parseFloat(document.getElementById('edit-price-late').value) || null) : null;
+  const hasBulk = document.getElementById('edit-has-bulk').checked;
+  const bulkName = hasBulk ? (document.getElementById('edit-bulk-name').value.trim() || null) : null;
+  const bulkQty = hasBulk ? (parseFloat(document.getElementById('edit-bulk-qty').value) || null) : null;
 
   if (!name || !price) { showToast('⚠️ Falta nombre o precio'); return; }
 
   if (editingMenuId) {
     const m = STORAGE.menu.find(x => x.id === editingMenuId);
-    Object.assign(m, { name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold, priceLate });
+    Object.assign(m, { name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold, priceLate, bulkName, bulkQty });
   } else {
     STORAGE.menu.push({
       id: 'm' + Date.now(),
-      name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold, priceLate
+      name, category, price, cost, yieldPct, tracksStock, stock, stockUnit, lowThreshold, priceLate, bulkName, bulkQty
     });
   }
   saveToStore();
@@ -4059,13 +4256,19 @@ function initHoursSelects() {
   const startSel = document.getElementById('hours-start-sel');
   const endSel = document.getElementById('hours-end-sel');
   if (!startSel || !endSel) return;
-  const hours = Array.from({length:24},(_,i)=>i);
-  const fmt = h => `${String(h).padStart(2,'0')}:00`;
-  [startSel, endSel].forEach((sel, idx) => {
-    sel.innerHTML = hours.map(h => `<option value="${h}">${fmt(h)}</option>`).join('');
-  });
-  startSel.value = STORAGE.meta.hoursStart || 10;
-  endSel.value = STORAGE.meta.hoursEnd || 22;
+  const fmt = h => `${String(h % 24).padStart(2,'0')}:00`;
+  // Apertura: 0-23
+  const startHours = Array.from({length:24},(_,i)=>i);
+  startSel.innerHTML = startHours.map(h => `<option value="${h}">${fmt(h)}</option>`).join('');
+  // Cierre: 0-23, plus past-midnight options (24=medianoche, 25=1am, 26=2am, 27=3am, 28=4am)
+  const endHours = Array.from({length:24},(_,i)=>i).concat([24,25,26,27,28]);
+  endSel.innerHTML = endHours.map(h => {
+    let label = fmt(h);
+    if (h >= 24) label = `${fmt(h)} (madrugada)`;
+    return `<option value="${h}">${label}</option>`;
+  }).join('');
+  startSel.value = STORAGE.meta.hoursStart != null ? STORAGE.meta.hoursStart : 10;
+  endSel.value = STORAGE.meta.hoursEnd != null ? STORAGE.meta.hoursEnd : 25;
 }
 
 function saveBusinessHours() {
@@ -4074,7 +4277,9 @@ function saveBusinessHours() {
   STORAGE.meta.hoursStart = s;
   STORAGE.meta.hoursEnd = e;
   saveToStore();
-  showToast(`✓ Horario guardado: ${String(s).padStart(2,'0')}:00 - ${String(e).padStart(2,'0')}:00`);
+  const fmt = h => `${String(h % 24).padStart(2,'0')}:00`;
+  const eLabel = e >= 24 ? fmt(e) + ' madrugada' : fmt(e);
+  showToast(`✓ Horario: ${fmt(s)} - ${eLabel}`);
 }
 
 
@@ -4102,11 +4307,11 @@ function setPosMode(mode) {
   updatePosFloating();
 }
 
-function isWithinBusinessHours() {
-  const now = new Date();
+function isWithinBusinessHours(when) {
+  const now = when ? new Date(when) : new Date();
   const h = now.getHours() + now.getMinutes() / 60;
-  const start = STORAGE.meta.hoursStart || 10;
-  let end = STORAGE.meta.hoursEnd || 25;
+  const start = STORAGE.meta.hoursStart != null ? STORAGE.meta.hoursStart : 10;
+  let end = STORAGE.meta.hoursEnd != null ? STORAGE.meta.hoursEnd : 25;
   // end > 24 means it crosses midnight (e.g. 25 = 1:00 am next day)
   if (end > 24) {
     // within hours if: after start today, OR before (end-24) early morning
@@ -4115,9 +4320,10 @@ function isWithinBusinessHours() {
   return h >= start && h < end;
 }
 
-// Returns the effective price for an item right now (normal vs late-night)
-function effectivePrice(item) {
-  if (item.priceLate != null && item.priceLate > 0 && !isWithinBusinessHours()) {
+// Returns the effective price for an item at a given time (normal vs late-night).
+// Pass a date string/Date to evaluate for a past sale; omit for "now".
+function effectivePrice(item, when) {
+  if (item.priceLate != null && item.priceLate > 0 && !isWithinBusinessHours(when)) {
     return item.priceLate;
   }
   return item.price;
@@ -4298,6 +4504,7 @@ function renderCart() {
   document.getElementById('cart-total').textContent = '$' + total.toLocaleString('es-MX');
   document.getElementById('cart-summary').style.display = 'block';
   document.getElementById('cart-checkout-section').style.display = 'block';
+  if(document.getElementById('cart-past-toggle')){document.getElementById('cart-past-toggle').checked=false;document.getElementById('cart-past-fields').style.display='none';}resetDiscount();
   renderCartClient();
   // Reset payment selection display
   document.querySelectorAll('[data-pay]').forEach(b => b.classList.toggle('selected', b.dataset.pay === posState.checkoutPayment));
@@ -4351,12 +4558,117 @@ function setSaleClient(clientId) {
   renderCartClient();
 }
 
+function applyDiscount() {
+  const type = document.getElementById('discount-type').value;
+  const wrapEl = document.getElementById('discount-value-wrap');
+  const labelEl = document.getElementById('discount-value-label');
+
+  // Show/hide value input
+  if (wrapEl) wrapEl.style.display = type === 'none' ? 'none' : 'block';
+  if (type === 'pct' && labelEl) labelEl.textContent = 'Porcentaje (%)';
+  if (type === 'fixed' && labelEl) labelEl.textContent = 'Monto ($)';
+
+  // Calculate discount
+  const rawTotal = posState.cart.reduce((s,c) => s + c.price * c.qty, 0);
+  let discountAmt = 0;
+  if (type !== 'none') {
+    const val = parseFloat(document.getElementById('discount-value').value) || 0;
+    if (type === 'pct') discountAmt = rawTotal * (Math.min(val, 100) / 100);
+    if (type === 'fixed') discountAmt = Math.min(val, rawTotal);
+  }
+  discountAmt = Math.round(discountAmt * 100) / 100;
+
+  // Update display
+  const finalTotal = rawTotal - discountAmt;
+  const totalEl = document.getElementById('cart-total');
+  if (totalEl) totalEl.textContent = '$' + finalTotal.toLocaleString('es-MX');
+
+  const discLine = document.getElementById('cart-discount-line');
+  const discDisplay = document.getElementById('cart-discount-display');
+  if (discLine && discDisplay) {
+    discLine.style.display = discountAmt > 0 ? 'flex' : 'none';
+    discDisplay.textContent = '-$' + discountAmt.toLocaleString('es-MX');
+  }
+
+  const preview = document.getElementById('discount-preview');
+  if (preview) {
+    if (discountAmt > 0) {
+      const pct = type === 'fixed' ? ((discountAmt/rawTotal)*100).toFixed(0) : '';
+      preview.textContent = `Descuento: -$${discountAmt.toLocaleString('es-MX')}${pct?' ('+pct+'%)':''} → Total $${finalTotal.toLocaleString('es-MX')}`;
+    } else {
+      preview.textContent = '';
+    }
+  }
+
+  // Store discount in posState
+  posState.discount = { type, amount: discountAmt };
+}
+
+function getDiscountAmount() {
+  return (posState.discount && posState.discount.amount) ? posState.discount.amount : 0;
+}
+
+function resetDiscount() {
+  posState.discount = { type:'none', amount:0 };
+  const dt = document.getElementById('discount-type');
+  if (dt) { dt.value = 'none'; }
+  const dv = document.getElementById('discount-value');
+  if (dv) { dv.value = ''; }
+  const dw = document.getElementById('discount-value-wrap');
+  if (dw) dw.style.display = 'none';
+  const dl = document.getElementById('cart-discount-line');
+  if (dl) dl.style.display = 'none';
+  const dp = document.getElementById('discount-preview');
+  if (dp) dp.textContent = '';
+}
+
+function togglePastDate() {
+  const on = document.getElementById('cart-past-toggle').checked;
+  const fields = document.getElementById('cart-past-fields');
+  fields.style.display = on ? 'block' : 'none';
+  if (on) {
+    // Default to yesterday same time, formatted for datetime-local
+    const d = new Date(Date.now() - 86400000);
+    const pad = n => String(n).padStart(2,'0');
+    const val = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    document.getElementById('cart-sale-datetime').value = val;
+  }
+}
+
 function confirmSale() {
   if (posState.cart.length === 0 || !posState.checkoutPayment) return;
 
-  const now = new Date().toISOString();
+  // Determine sale time: past date picker, or now
+  let saleDate = new Date();
+  const pastOn = document.getElementById('cart-past-toggle') && document.getElementById('cart-past-toggle').checked;
+  if (pastOn) {
+    const dtVal = document.getElementById('cart-sale-datetime').value;
+    if (dtVal) {
+      saleDate = new Date(dtVal);
+    } else {
+      showToast('⚠️ Elige la fecha y hora de la venta');
+      return;
+    }
+  }
+  const now = saleDate.toISOString();
   const ticketId = 't' + Date.now();  // one shared id for all lines of this sale
   const client = posState.checkoutClient ? STORAGE.clients.find(c => c.id === posState.checkoutClient) : null;
+
+  // Recompute each line's price for the SALE time (night price uses that hour)
+  posState.cart.forEach(c => {
+    const menuItem = STORAGE.menu.find(m => m.id === c.itemId);
+    if (menuItem) c.price = effectivePrice(menuItem, saleDate);
+  });
+
+  // Apply discount proportionally across cart lines
+  const discAmt = getDiscountAmount();
+  if (discAmt > 0) {
+    const rawTotal = posState.cart.reduce((s,c) => s + c.price*c.qty, 0);
+    const ratio = rawTotal > 0 ? (rawTotal - discAmt) / rawTotal : 1;
+    posState.cart.forEach(c => {
+      c.price = Math.round(c.price * ratio * 100) / 100;
+    });
+  }
 
   // Save each cart line as a separate sale (compatible with existing data model)
   posState.cart.forEach(c => {
@@ -4390,7 +4702,8 @@ function confirmSale() {
     id: ticketId,
     date: now,
     total: ticketTotal,
-    paid: isPending ? 0 : ticketTotal,        // if not pending, it's fully paid now
+    discount: discAmt || 0,
+    paid: isPending ? 0 : ticketTotal,
     status: isPending ? 'pendiente' : 'pagada',
     method: posState.checkoutPayment,
     client: client ? client.name : '',
@@ -4425,6 +4738,7 @@ function confirmSale() {
   posState.cart = [];
   posState.checkoutPayment = null;
   posState.checkoutClient = null;
+  posState.discount = { type:'none', amount:0 };
   updatePosFloating();
   renderPosGrid();  // refresh stock badges
 
@@ -4718,13 +5032,47 @@ function openStockAdjust(itemId) {
   const m = STORAGE.menu.find(x => x.id === itemId);
   if (!m) return;
   adjustingStockId = itemId;
-  document.getElementById('stock-sheet-title').textContent = m.name;
+  document.getElementById('stock-sheet-title').textContent = 'Resurtir ' + m.name;
   document.getElementById('stock-sheet-sub').textContent = `Unidad: ${m.stockUnit}. Mínimo configurado: ${m.lowThreshold}.`;
   document.getElementById('stock-sheet-current').textContent = m.stock === null ? 'Sin contar aún' : `${m.stock} ${m.stockUnit}`;
   document.getElementById('stock-add').value = '';
   document.getElementById('stock-set').value = '';
+  document.getElementById('stock-add-unit').textContent = m.stockUnit ? '(' + m.stockUnit + ')' : '';
+
+  // Bulk block: only if this product has a bulk unit configured
+  const bulkBlock = document.getElementById('stock-bulk-block');
+  if (m.bulkQty && m.bulkQty > 0 && m.bulkName) {
+    bulkBlock.style.display = 'block';
+    document.getElementById('stock-bulk-qty').value = '';
+    document.getElementById('stock-bulk-unit-label').textContent = m.bulkName + (m.bulkName.endsWith('s') ? '' : 's');
+    updateRestockEcho();
+  } else {
+    bulkBlock.style.display = 'none';
+  }
+
+  // Reset expense fields
+  document.getElementById('stock-log-expense').checked = false;
+  document.getElementById('stock-expense-fields').style.display = 'none';
+  document.getElementById('stock-expense-amount').value = '';
+  document.getElementById('stock-expense-supplier').value = '';
+
   document.getElementById('sheet-backdrop').classList.add('active');
   document.getElementById('stock-sheet').classList.add('active');
+}
+
+function updateRestockEcho() {
+  const m = STORAGE.menu.find(x => x.id === adjustingStockId);
+  if (!m || !m.bulkQty) return;
+  const bulkQty = parseFloat(document.getElementById('stock-bulk-qty').value) || 0;
+  const units = bulkQty * m.bulkQty;
+  document.getElementById('stock-bulk-echo').textContent = `= ${units} ${m.stockUnit} al stock`;
+  // Auto-fill the "add" field with the converted amount
+  if (bulkQty > 0) document.getElementById('stock-add').value = units;
+}
+
+function toggleStockExpense() {
+  const on = document.getElementById('stock-log-expense').checked;
+  document.getElementById('stock-expense-fields').style.display = on ? 'block' : 'none';
 }
 
 function applyStockAdjust() {
@@ -4735,13 +5083,42 @@ function applyStockAdjust() {
   const addVal = parseInt(document.getElementById('stock-add').value);
   const setVal = parseInt(document.getElementById('stock-set').value);
 
+  let added = 0;
   if (!isNaN(setVal)) {
     m.stock = Math.max(0, setVal);
   } else if (!isNaN(addVal)) {
+    added = addVal;
     m.stock = Math.max(0, (m.stock || 0) + addVal);
   } else {
     showToast('⚠️ Ingresa una cantidad');
     return;
+  }
+
+  // Optionally log the purchase as an expense (so it counts, no double entry)
+  const logExpense = document.getElementById('stock-log-expense').checked;
+  if (logExpense) {
+    const amount = parseFloat(document.getElementById('stock-expense-amount').value);
+    const supplier = document.getElementById('stock-expense-supplier').value.trim();
+    if (amount && amount > 0) {
+      const bulkQty = parseFloat(document.getElementById('stock-bulk-qty').value) || 0;
+      let conceptQty = added || (m.stock);
+      let conceptStr;
+      if (bulkQty > 0 && m.bulkName) {
+        conceptStr = `${bulkQty} ${m.bulkName}${bulkQty>1 && !m.bulkName.endsWith('s')?'s':''} de ${m.name}`;
+      } else {
+        conceptStr = `${conceptQty} ${m.stockUnit} de ${m.name}`;
+      }
+      STORAGE.expenses.push({
+        id: 'e' + Date.now(),
+        date: new Date().toISOString(),
+        type: 'Operativo',
+        category: m.category === 'Cerveza' ? 'Bebidas' : (m.category || 'Mercancía'),
+        concept: conceptStr,
+        supplier: supplier,
+        amount: amount,
+        fromRestock: true
+      });
+    }
   }
 
   saveToStore();
@@ -6909,6 +7286,98 @@ function renderReceivables() {
       </div>
     </div>`;
   }).join('');
+}
+
+
+/* ===================================================================
+   📝 CARGO LIBRE — ticket manual sin productos del menú
+=================================================================== */
+var _mtPayment = 'Efectivo';
+
+function selectMtPayment(method) {
+  _mtPayment = method;
+  document.querySelectorAll('[data-mt-pay]').forEach(b =>
+    b.classList.toggle('active', b.dataset.mtPay === method)
+  );
+}
+
+function openManualTicket() {
+  _mtPayment = 'Efectivo';
+  const el = document.getElementById('mt-concept');
+  if (el) el.value = '';
+  const am = document.getElementById('mt-amount');
+  if (am) am.value = '';
+  const cl = document.getElementById('mt-client');
+  if (cl) cl.value = '';
+  // reset payment buttons
+  document.querySelectorAll('[data-mt-pay]').forEach(b =>
+    b.classList.toggle('active', b.dataset.mtPay === 'Efectivo')
+  );
+  document.getElementById('sheet-backdrop').classList.add('active');
+  document.getElementById('manual-ticket-sheet').classList.add('active');
+}
+
+function saveManualTicket() {
+  const concept = (document.getElementById('mt-concept').value || '').trim();
+  const amount = parseFloat(document.getElementById('mt-amount').value);
+  const clientName = (document.getElementById('mt-client').value || '').trim();
+
+  if (!concept) { showToast('⚠️ Pon un concepto'); return; }
+  if (!amount || amount <= 0) { showToast('⚠️ Pon el monto'); return; }
+
+  const now = new Date().toISOString();
+  const ticketId = 't' + Date.now();
+  const isPending = _mtPayment === 'Pendiente';
+
+  // Find or match client by name
+  let clientId = null;
+  if (clientName) {
+    const found = STORAGE.clients.find(c => c.name.toLowerCase() === clientName.toLowerCase());
+    if (found) {
+      clientId = found.id;
+      // Update client stats
+      found.totalSpent = (found.totalSpent || 0) + (isPending ? 0 : amount);
+      found.visits = (found.visits || 0) + 1;
+      found.lastVisit = now;
+    }
+  }
+
+  // Create a single sale line (like a regular sale, but concept is the item)
+  STORAGE.sales.push({
+    id: 's' + Date.now() + Math.random().toString(36).slice(2,5),
+    ticketId: ticketId,
+    date: now,
+    itemId: 'manual',
+    itemName: concept,
+    price: amount,
+    qty: 1,
+    total: amount,
+    cost: null,
+    payment: _mtPayment,
+    client: clientName,
+    clientId: clientId
+  });
+
+  // Ticket record
+  STORAGE.tickets[ticketId] = {
+    id: ticketId,
+    date: now,
+    total: amount,
+    discount: 0,
+    paid: isPending ? 0 : amount,
+    status: isPending ? 'pendiente' : 'pagada',
+    method: _mtPayment,
+    client: clientName,
+    clientId: clientId,
+    payments: isPending ? [] : [{ date: now, amount: amount, method: _mtPayment }],
+    proofUrl: null,
+    items: [{ name: concept, qty: 1, total: amount }],
+    isManual: true
+  };
+
+  saveToStore();
+  closeSheet();
+  showToast(`✓ Cargo registrado: $${amount.toLocaleString('es-MX')}`);
 }
 
 /* ===== Init ===== */
