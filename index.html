@@ -2642,19 +2642,35 @@ async function onAuthSuccess(user) {
 }
 
 // ---- SYNC: pull everything from cloud into STORAGE ----
+// Uses upsert-style merge: cloud wins for individual records (by id),
+// so we never lose a cloud record when pulling.
 async function cloudPull() {
   if (!CLOUD.enabled || !CLOUD.businessId) return;
   const c = CLOUD.client, bid = CLOUD.businessId;
   for (const [localKey, table] of Object.entries(SYNC_TABLES)) {
     const { data, error } = await c.from(table).select('id, data').eq('business_id', bid);
     if (!error && data) {
-      STORAGE[localKey] = data.map(r => r.data);
+      // Build a map from cloud data (cloud is authoritative on pull)
+      const cloudMap = {};
+      data.forEach(r => { cloudMap[r.id] = r.data; });
+      // Keep any local items not yet pushed (they'll be pushed on next save)
+      const local = STORAGE[localKey] || [];
+      const merged = [...data.map(r => r.data)];
+      local.forEach(item => { if (!cloudMap[item.id]) merged.push(item); });
+      STORAGE[localKey] = merged;
     }
   }
-  // Blobs
+  // Blobs: cloud wins, but merge tickets object
   const { data: blobs } = await c.from('business_data').select('key, data').eq('business_id', bid);
   if (blobs) {
-    blobs.forEach(b => { STORAGE[b.key] = b.data; });
+    blobs.forEach(b => {
+      if (b.key === 'tickets' && STORAGE.tickets) {
+        // Merge tickets: local items not in cloud are preserved
+        STORAGE.tickets = Object.assign({}, STORAGE.tickets, b.data);
+      } else {
+        STORAGE[b.key] = b.data;
+      }
+    });
   }
   saveLocalOnly();
 }
@@ -2663,20 +2679,25 @@ async function cloudPull() {
 async function cloudInitialSync() {
   CLOUD.syncing = true;
   try {
-    // Check if cloud has any data
-    const { count } = await CLOUD.client.from('menu_items')
+    // Check what's in the cloud
+    const { count } = await CLOUD.client.from('sales')
       .select('id', { count:'exact', head:true }).eq('business_id', CLOUD.businessId);
     const cloudEmpty = !count || count === 0;
-    const localHasData = (STORAGE.sales && STORAGE.sales.length) || (STORAGE.menu && STORAGE.menu.length);
+    const localHasData = (STORAGE.sales && STORAGE.sales.length > 0) ||
+                         (STORAGE.expenses && STORAGE.expenses.length > 0);
 
     if (cloudEmpty && localHasData) {
-      if (confirm('Tienes datos en este dispositivo. ¿Subirlos a la nube ahora? (Recomendado la primera vez)')) {
-        await cloudPushAll();
-      } else {
-        await cloudPull();
-      }
+      // Cloud is empty, local has data → push everything automatically (no ask)
+      await cloudPushAll();
+      showToast('☁️ Datos sincronizados a la nube');
+    } else if (!cloudEmpty && localHasData) {
+      // Both sides have data → smart merge (no duplicates)
+      await cloudMergeSync();
+      showToast('☁️ Sincronización completa');
     } else {
+      // Cloud has data, local is empty → just pull
       await cloudPull();
+      showToast('☁️ Datos descargados de la nube');
     }
   } catch(e) {
     console.warn('Initial sync issue', e);
@@ -2684,6 +2705,68 @@ async function cloudInitialSync() {
   } finally {
     CLOUD.syncing = false;
   }
+}
+
+// Smart merge: combines local + cloud data without duplicates.
+// Uses id-based deduplication for collections, cloud-wins for blobs.
+async function cloudMergeSync() {
+  if (!CLOUD.enabled || !CLOUD.businessId) return;
+  const c = CLOUD.client, bid = CLOUD.businessId;
+
+  // ── Collections (arrays keyed by id) ──
+  for (const [localKey, table] of Object.entries(SYNC_TABLES)) {
+    const { data: cloudRows } = await c.from(table)
+      .select('id, data').eq('business_id', bid);
+    const cloudMap = {};
+    (cloudRows || []).forEach(r => { cloudMap[r.id] = r.data; });
+
+    const localItems = STORAGE[localKey] || [];
+    const localMap = {};
+    localItems.forEach(item => { localMap[item.id] = item; });
+
+    // Items only in local → push to cloud
+    const onlyLocal = localItems.filter(item => !cloudMap[item.id]);
+    if (onlyLocal.length > 0) {
+      const rows = onlyLocal.map(item => ({ id: item.id, business_id: bid, data: item }));
+      await c.from(table).upsert(rows);
+    }
+
+    // Items only in cloud → add to local
+    const onlyCloud = (cloudRows || []).filter(r => !localMap[r.id]).map(r => r.data);
+
+    // Merged result: all unique items by id
+    const merged = [...localItems];
+    onlyCloud.forEach(item => merged.push(item));
+    STORAGE[localKey] = merged;
+  }
+
+  // ── Blobs (single objects: recipes, tickets, meta, dayLog) ──
+  const { data: blobs } = await c.from('business_data')
+    .select('key, data').eq('business_id', bid);
+  const cloudBlobMap = {};
+  (blobs || []).forEach(b => { cloudBlobMap[b.key] = b.data; });
+
+  for (const key of SYNC_BLOBS) {
+    if (cloudBlobMap[key] !== undefined) {
+      // Cloud version exists → use it (source of truth across devices)
+      // But merge tickets object so no local tickets are lost
+      if (key === 'tickets' && STORAGE[key]) {
+        const merged = Object.assign({}, STORAGE[key], cloudBlobMap[key]);
+        STORAGE[key] = merged;
+        // Push merged back to cloud
+        await c.from('business_data')
+          .upsert({ business_id: bid, key, data: merged });
+      } else {
+        STORAGE[key] = cloudBlobMap[key];
+      }
+    } else if (STORAGE[key] !== undefined) {
+      // Only local has it → push to cloud
+      await c.from('business_data')
+        .upsert({ business_id: bid, key, data: STORAGE[key] });
+    }
+  }
+
+  saveLocalOnly();
 }
 
 // Push ALL local data to cloud (used on first upload)
