@@ -2785,7 +2785,6 @@ async function cloudPushAll() {
       await c.from('business_data').upsert({ business_id:bid, key:key, data:STORAGE[key] });
     }
   }
-  showToast('☁️ Datos subidos a la nube');
 }
 
 // Realtime: listen for changes from OTHER devices
@@ -3960,7 +3959,15 @@ function renderHistory(type) {
             </div>
           </div>`;
         });
-        html += `</div>`;
+        // Delete entire ticket button
+      html += `<div style="padding:10px 0 4px">
+        <button onclick="event.stopPropagation();deleteTicket('${tid}')"
+          style="width:100%;padding:10px;border-radius:10px;border:1.5px solid #ffcccc;
+                 background:#fff5f5;color:#c0392b;font-size:13px;font-weight:700;cursor:pointer">
+          🗑️ Eliminar orden completa
+        </button>
+      </div>`;
+      html += `</div>`;
       }
       return html;
     }).join('');
@@ -3999,8 +4006,64 @@ function deleteRecord(type, id) {
   if (!confirm('¿Eliminar este registro?')) return;
   STORAGE[type] = STORAGE[type].filter(x => x.id !== id);
   saveToStore();
+  cloudDeleteRecord(type, id);   // also remove from Supabase
   renderHistory(currentHistoryFilter);
   showToast('Eliminado');
+}
+
+// Delete a single record from Supabase
+async function cloudDeleteRecord(localKey, id) {
+  if (!CLOUD.enabled || !CLOUD.businessId || !CLOUD.client) return;
+  const table = SYNC_TABLES[localKey];
+  if (!table) return;
+  try {
+    await CLOUD.client.from(table).delete()
+      .eq('id', id)
+      .eq('business_id', CLOUD.businessId);
+  } catch(e) { console.warn('cloudDeleteRecord failed', e); }
+}
+
+// Delete an entire ticket: all its sale lines + the ticket record
+async function deleteTicket(ticketId) {
+  if (!confirm('¿Eliminar esta orden completa?')) return;
+
+  // Remove all sale lines belonging to this ticket
+  const toDelete = STORAGE.sales.filter(s =>
+    s.ticketId === ticketId ||
+    (!s.ticketId && s.date === STORAGE.tickets[ticketId]?.date &&
+     s.clientId === STORAGE.tickets[ticketId]?.clientId)
+  );
+  STORAGE.sales = STORAGE.sales.filter(s =>
+    s.ticketId !== ticketId &&
+    !((!s.ticketId) && s.date === STORAGE.tickets[ticketId]?.date)
+  );
+
+  // Remove the ticket record
+  delete STORAGE.tickets[ticketId];
+
+  saveToStore();
+
+  // Delete from Supabase
+  if (CLOUD.enabled && CLOUD.businessId && CLOUD.client) {
+    try {
+      // Delete all sale lines
+      const ids = toDelete.map(s => s.id);
+      if (ids.length > 0) {
+        await CLOUD.client.from('sales').delete()
+          .in('id', ids)
+          .eq('business_id', CLOUD.businessId);
+      }
+      // Update tickets blob (re-push the whole object without this ticket)
+      await CLOUD.client.from('business_data').upsert({
+        business_id: CLOUD.businessId,
+        key: 'tickets',
+        data: STORAGE.tickets
+      });
+    } catch(e) { console.warn('deleteTicket cloud failed', e); }
+  }
+
+  renderHistory('sales');
+  showToast('🗑️ Orden eliminada');
 }
 
 /* ===== Menu & misc ===== */
