@@ -3664,12 +3664,22 @@ function renderMenuList(filter) {
 function renderMenuItemRow(m) {
     const realCost = m.cost ? m.cost / ((m.yieldPct || 100) / 100) : null;
     const fc = realCost ? (realCost / m.price) : null;
+    const marginPct = fc != null ? Math.round((1 - fc) * 100) : null;
     let badge = '';
-    if (!m.cost) badge = '<span style="color:var(--muted);font-size:12px">Sin costo</span>';
-    else if (fc <= 0.30) badge = '<span style="color:var(--green);font-size:12px;font-weight:600">Excelente</span>';
-    else if (fc <= 0.35) badge = '<span style="color:var(--green);font-size:12px;font-weight:600">Bien</span>';
-    else if (fc <= 0.45) badge = '<span style="color:var(--amber);font-size:12px;font-weight:600">Revisar</span>';
-    else badge = '<span style="color:var(--red);font-size:12px;font-weight:600">Pérdida</span>';
+    if (!m.cost) {
+      badge = '<span style="color:var(--muted);font-size:12px">Sin costo</span>';
+    } else if (fc > 1) {
+      // Cost actually exceeds price — real loss
+      badge = '<span style="color:var(--red);font-size:12px;font-weight:700">🚨 Pérdida real</span>';
+    } else if (marginPct >= 65) {
+      badge = `<span style="color:#1A8C5A;font-size:12px;font-weight:600">✓ ${marginPct}% margen</span>`;
+    } else if (marginPct >= 45) {
+      badge = `<span style="color:var(--teal);font-size:12px;font-weight:600">✓ ${marginPct}% margen</span>`;
+    } else if (marginPct >= 25) {
+      badge = `<span style="color:var(--amber);font-size:12px;font-weight:600">⚠️ ${marginPct}% margen</span>`;
+    } else {
+      badge = `<span style="color:var(--red);font-size:12px;font-weight:600">⚠️ ${marginPct}% margen bajo</span>`;
+    }
 
     let stockHtml = '';
     if (m.tracksStock) {
