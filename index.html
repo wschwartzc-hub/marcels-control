@@ -3664,12 +3664,22 @@ function renderMenuList(filter) {
 function renderMenuItemRow(m) {
     const realCost = m.cost ? m.cost / ((m.yieldPct || 100) / 100) : null;
     const fc = realCost ? (realCost / m.price) : null;
+    const marginPct = fc != null ? Math.round((1 - fc) * 100) : null;
     let badge = '';
-    if (!m.cost) badge = '<span style="color:var(--muted);font-size:12px">Sin costo</span>';
-    else if (fc <= 0.30) badge = '<span style="color:var(--green);font-size:12px;font-weight:600">Excelente</span>';
-    else if (fc <= 0.35) badge = '<span style="color:var(--green);font-size:12px;font-weight:600">Bien</span>';
-    else if (fc <= 0.45) badge = '<span style="color:var(--amber);font-size:12px;font-weight:600">Revisar</span>';
-    else badge = '<span style="color:var(--red);font-size:12px;font-weight:600">Pérdida</span>';
+    if (!m.cost) {
+      badge = '<span style="color:var(--muted);font-size:12px">Sin costo</span>';
+    } else if (fc > 1) {
+      // Cost actually exceeds price — real loss
+      badge = '<span style="color:var(--red);font-size:12px;font-weight:700">🚨 Pérdida real</span>';
+    } else if (marginPct >= 65) {
+      badge = `<span style="color:#1A8C5A;font-size:12px;font-weight:600">✓ ${marginPct}% margen</span>`;
+    } else if (marginPct >= 45) {
+      badge = `<span style="color:var(--teal);font-size:12px;font-weight:600">✓ ${marginPct}% margen</span>`;
+    } else if (marginPct >= 25) {
+      badge = `<span style="color:var(--amber);font-size:12px;font-weight:600">⚠️ ${marginPct}% margen</span>`;
+    } else {
+      badge = `<span style="color:var(--red);font-size:12px;font-weight:600">⚠️ ${marginPct}% margen bajo</span>`;
+    }
 
     let stockHtml = '';
     if (m.tracksStock) {
@@ -4296,37 +4306,183 @@ function parseExcelDate(val) {
 /* ===== Export to native Excel (matches our template structure) ===== */
 function exportXLSX() {
   const wb = XLSX.utils.book_new();
+  const DAYS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  const fmt = d => new Date(d).toLocaleString('es-MX');
+  const fmtDate = d => new Date(d).toLocaleDateString('es-MX');
+  const fmtTime = d => new Date(d).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
 
-  // Recetario sheet
-  const recHeader = [[''], [''], [''], [''], [''], ['', 'Platillo','Categoría','Precio Venta','Costo Insumos']];
-  const recRows = STORAGE.menu.map(m => ['', m.name, m.category, m.price, m.cost]);
-  const recData = [...recHeader, ...recRows];
-  const recSheet = XLSX.utils.aoa_to_sheet(recData);
-  XLSX.utils.book_append_sheet(wb, recSheet, 'Recetario');
-
-  // Ventas sheet
-  const venHeader = [[''], [''], [''], [''], [''], ['', 'Fecha','Día','Cliente','Platillo','Cant.','Precio','Total','Pago']];
-  const venRows = STORAGE.sales.map(s => {
-    const d = new Date(s.date);
-    return ['', d, '', s.client||'', s.itemName, s.qty, s.price, s.total, s.payment];
-  });
-  const venData = [...venHeader, ...venRows];
-  const venSheet = XLSX.utils.aoa_to_sheet(venData);
+  // ── 1. VENTAS (línea por artículo vendido) ──
+  const venCols = ['Fecha','Hora','Día semana','# Orden','Artículo','Categoría',
+    'Cantidad','Precio unitario','Total línea','Método pago','Cliente','# Cliente','Ticket ID'];
+  const venRows = [...STORAGE.sales]
+    .sort((a,b) => new Date(a.date)-new Date(b.date))
+    .map(s => {
+      const d = new Date(s.date);
+      const menuItem = STORAGE.menu.find(m => m.id === s.itemId);
+      const client = s.clientId ? STORAGE.clients.find(c => c.id === s.clientId) : null;
+      const tk = s.ticketId ? STORAGE.tickets[s.ticketId] : null;
+      const orderNum = tk ? Object.keys(STORAGE.tickets).sort().indexOf(s.ticketId)+1 : '';
+      return [
+        fmtDate(d), fmtTime(d), DAYS[d.getDay()],
+        orderNum ? String(orderNum).padStart(3,'0') : '',
+        s.itemName, menuItem ? menuItem.category : '',
+        s.qty, s.price, s.total, s.payment||'',
+        s.client||'', client ? String(client.num).padStart(3,'0') : '',
+        s.ticketId||''
+      ];
+    });
+  const venSheet = XLSX.utils.aoa_to_sheet([venCols, ...venRows]);
+  venSheet['!cols'] = [14,8,10,8,24,14,8,14,12,14,18,10,28].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb, venSheet, 'Ventas');
 
-  // Gastos sheet
-  const gasHeader = [[''], [''], [''], [''], [''], ['', 'Fecha','Concepto','Categoría','Tipo','Proveedor','Monto','Pago']];
-  const gasRows = STORAGE.expenses.map(g => {
-    const d = new Date(g.date);
-    return ['', d, g.concept, g.category, g.type, g.supplier||'', g.amount, ''];
-  });
-  const gasData = [...gasHeader, ...gasRows];
-  const gasSheet = XLSX.utils.aoa_to_sheet(gasData);
+  // ── 2. ÓRDENES / TICKETS ──
+  const tkCols = ['# Orden','Fecha','Hora','Día','Cliente','# Cliente',
+    'Total orden','Monto pagado','Saldo pendiente','Estado','Método pago',
+    'Artículos','Tiene comprobante'];
+  const tkRows = Object.values(STORAGE.tickets||{})
+    .sort((a,b) => new Date(a.date)-new Date(b.date))
+    .map((tk,i) => {
+      const d = new Date(tk.date);
+      const client = tk.clientId ? STORAGE.clients.find(c => c.id === tk.clientId) : null;
+      const items = (tk.items||[]).map(it => `${it.name}${it.qty>1?' x'+it.qty:''}`).join(', ');
+      const bal = Math.max(0,(tk.total||0)-(tk.paid||0));
+      return [
+        String(i+1).padStart(3,'0'), fmtDate(d), fmtTime(d), DAYS[d.getDay()],
+        tk.client||'Sin cliente', client ? String(client.num).padStart(3,'0') : '',
+        tk.total||0, tk.paid||0, bal,
+        tk.status==='pagada'?'Pagada':tk.status==='parcial'?'Parcial':'Pendiente',
+        tk.method||'', items, tk.proofUrl ? 'Sí' : 'No'
+      ];
+    });
+  const tkSheet = XLSX.utils.aoa_to_sheet([tkCols, ...tkRows]);
+  tkSheet['!cols'] = [8,12,8,10,18,10,12,12,14,10,14,36,14].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, tkSheet, 'Órdenes');
+
+  // ── 3. CLIENTES ──
+  const clCols = ['# Cliente','Nombre','Teléfono','Nivel','Score pagador',
+    'Visitas','Gasto total','Ticket promedio','Deuda actual',
+    'Nivel deuda','Última visita','Fecha alta','Favorito #1','Favorito #2'];
+  const clRows = [...STORAGE.clients]
+    .sort((a,b) => a.num - b.num)
+    .map(c => {
+      const tier = typeof getClientTier==='function' ? getClientTier(c) : {label:''};
+      const payer = typeof getPayerScore==='function' ? getPayerScore(c) : {label:''};
+      const debt = typeof getDebtLevel==='function' ? getDebtLevel(c) : {debt:0,label:''};
+      const favs = typeof getClientFavorites==='function' ? getClientFavorites(c,2) : [];
+      const avg = c.visits>0 ? Math.round((c.totalSpent||0)/c.visits) : 0;
+      return [
+        String(c.num).padStart(3,'0'), c.name, c.phone||'',
+        tier.label, payer.label,
+        c.visits||0, c.totalSpent||0, avg, debt.debt||0, debt.label||'',
+        c.lastVisit ? fmtDate(c.lastVisit) : '',
+        c.created ? fmtDate(c.created) : '',
+        favs[0] ? favs[0].item.name : '',
+        favs[1] ? favs[1].item.name : ''
+      ];
+    });
+  const clSheet = XLSX.utils.aoa_to_sheet([clCols, ...clRows]);
+  clSheet['!cols'] = [10,20,14,12,16,8,12,14,12,12,14,14,24,24].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, clSheet, 'Clientes');
+
+  // ── 4. GASTOS ──
+  const gasCols = ['Fecha','Hora','Concepto','Categoría','Tipo',
+    'Proveedor','Monto','Origen'];
+  const gasRows = [...STORAGE.expenses]
+    .sort((a,b) => new Date(a.date)-new Date(b.date))
+    .map(g => {
+      const d = new Date(g.date);
+      const origen = g.fromPurchase ? 'Compra insumo' : g.fromRestock ? 'Resurtido' : 'Manual';
+      return [fmtDate(d), fmtTime(d), g.concept, g.category, g.type,
+              g.supplier||'', g.amount, origen];
+    });
+  const gasSheet = XLSX.utils.aoa_to_sheet([gasCols, ...gasRows]);
+  gasSheet['!cols'] = [12,8,28,14,10,18,12,14].map(w=>({wch:w}));
   XLSX.utils.book_append_sheet(wb, gasSheet, 'Gastos');
 
-  const fname = `marcels-export-${new Date().toISOString().slice(0,10)}.xlsx`;
+  // ── 5. MENÚ ──
+  const menuCols = ['Platillo','Categoría','Precio normal','Precio nocturno',
+    'Costo insumos','Margen %','Lleva inventario','Stock actual','Unidad',
+    'Stock mínimo','Unidad mayoreo','Equiv. mayoreo'];
+  const menuRows = [...STORAGE.menu]
+    .sort((a,b) => a.category.localeCompare(b.category)||a.name.localeCompare(b.name))
+    .map(m => {
+      const margin = m.cost && m.price ? Math.round((1 - m.cost/m.price)*100) : '';
+      return [
+        m.name, m.category, m.price, m.priceLate||'',
+        m.cost||'', margin, m.tracksStock?'Sí':'No',
+        m.stock!=null?m.stock:'', m.stockUnit||'',
+        m.lowThreshold||0, m.bulkName||'', m.bulkQty||''
+      ];
+    });
+  const menuSheet = XLSX.utils.aoa_to_sheet([menuCols, ...menuRows]);
+  menuSheet['!cols'] = [28,14,12,14,12,10,14,10,8,10,14,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, menuSheet, 'Menú');
+
+  // ── 6. COMPRAS DE INSUMOS ──
+  const purCols = ['Fecha','Ingrediente','Cantidad','Unidad',
+    'Total pagado','Precio/unidad','Proveedor'];
+  const purRows = [...(STORAGE.purchases||[])]
+    .sort((a,b) => new Date(a.date)-new Date(b.date))
+    .map(p => {
+      const ing = STORAGE.ingredients.find(i => i.id === p.ingredientId);
+      const ppu = p.qty > 0 ? Math.round((p.totalPaid/p.qty)*100)/100 : '';
+      return [fmtDate(p.date), ing?ing.name:p.ingredientId,
+              p.qty, p.unit, p.totalPaid, ppu, p.supplier||''];
+    });
+  const purSheet = XLSX.utils.aoa_to_sheet([purCols, ...purRows]);
+  purSheet['!cols'] = [12,20,10,8,12,12,18].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb, purSheet, 'Compras insumos');
+
+  // ── 7. RESUMEN EJECUTIVO ──
+  const now = new Date();
+  const thisMonth = STORAGE.sales.filter(s => {
+    const d = new Date(s.date);
+    return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear();
+  });
+  const revenue = thisMonth.reduce((s,x)=>s+x.total,0);
+  const expenses = STORAGE.expenses.filter(e => {
+    const d = new Date(e.date);
+    return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear()
+      && (e.type==='Operativo'||e.type==='Fijo');
+  }).reduce((s,x)=>s+x.amount,0);
+  const tickets = Object.values(STORAGE.tickets||{});
+  const pending = tickets.filter(t=>t.status!=='pagada');
+  const pendingAmt = pending.reduce((s,t)=>s+Math.max(0,(t.total||0)-(t.paid||0)),0);
+  const payMethods = {};
+  thisMonth.forEach(s=>{payMethods[s.payment]=(payMethods[s.payment]||0)+s.total;});
+
+  const sumData = [
+    ['RESUMEN EJECUTIVO — MARCELS', ''],
+    ['Exportado el', fmt(now)],
+    ['',''],
+    ['── MES ACTUAL ──',''],
+    ['Ingresos', revenue],
+    ['Gastos del negocio', expenses],
+    ['Ganancia estimada', revenue-expenses],
+    ['Margen', revenue>0?Math.round(((revenue-expenses)/revenue)*100)+'%':''],
+    ['Órdenes registradas', thisMonth.length],
+    ['Ticket promedio', thisMonth.length>0?Math.round(revenue/thisMonth.length):''],
+    ['',''],
+    ['── POR COBRAR ──',''],
+    ['Total pendiente', pendingAmt],
+    ['Órdenes sin pagar', pending.length],
+    ['',''],
+    ['── MÉTODOS DE PAGO (mes) ──',''],
+    ...Object.entries(payMethods).map(([m,v])=>[m,v]),
+    ['',''],
+    ['── BASE DE DATOS ──',''],
+    ['Total ventas registradas', STORAGE.sales.length],
+    ['Total clientes', STORAGE.clients.length],
+    ['Total gastos', STORAGE.expenses.length],
+    ['Productos en menú', STORAGE.menu.length],
+  ];
+  const sumSheet = XLSX.utils.aoa_to_sheet(sumData);
+  sumSheet['!cols'] = [{wch:32},{wch:20}];
+  XLSX.utils.book_append_sheet(wb, sumSheet, 'Resumen');
+
+  const fname = `marcels-${now.toISOString().slice(0,10)}.xlsx`;
   XLSX.writeFile(wb, fname);
-  showToast('✓ Excel exportado');
+  showToast('✓ Excel completo exportado (7 hojas)');
 }
 
 
