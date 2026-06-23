@@ -1472,8 +1472,51 @@
         Crear cuenta nueva
       </button>
 
+      <button onclick="showForgotPassword()"
+        style="background:none;border:none;color:rgba(255,255,255,.7);font-size:13px;font-family:inherit;cursor:pointer;margin-top:14px;text-decoration:underline">
+        ¿Olvidaste tu contraseña?
+      </button>
+
       <div id="auth-error" style="color:#FFD2C2;font-size:13px;margin-top:14px;min-height:18px"></div>
       <div id="auth-loading" style="color:white;font-size:13px;margin-top:8px;opacity:.8;display:none">⏳ Conectando…</div>
+    </div>
+  </div>
+
+  <!-- Forgot password screen -->
+  <div id="forgot-screen" style="display:none;position:fixed;inset:0;z-index:10000;background:linear-gradient(160deg,#0B3B47,#1A8C8C);flex-direction:column;align-items:center;justify-content:center;padding:32px">
+    <div style="font-family:'Plus Jakarta Sans',sans-serif;color:white;max-width:360px;width:100%;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">🔑</div>
+      <div style="font-weight:800;font-size:22px;margin-bottom:8px">Recuperar contraseña</div>
+      <div style="font-size:14px;opacity:.8;margin-bottom:24px">Te mandamos un enlace a tu correo para crear una nueva contraseña.</div>
+      <input type="email" id="forgot-email" placeholder="Tu correo" autocomplete="email"
+        style="width:100%;padding:15px;border-radius:14px;border:none;font-size:16px;font-family:inherit;margin-bottom:12px;box-sizing:border-box">
+      <button onclick="sendPasswordReset()"
+        style="width:100%;padding:16px;border-radius:14px;border:none;background:#F08A5D;color:white;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer;margin-bottom:10px">
+        Enviar enlace
+      </button>
+      <button onclick="hideForgotPassword()"
+        style="background:none;border:none;color:rgba(255,255,255,.7);font-size:14px;font-family:inherit;cursor:pointer;text-decoration:underline">
+        ← Regresar al login
+      </button>
+      <div id="forgot-msg" style="font-size:13px;margin-top:14px;min-height:18px"></div>
+    </div>
+  </div>
+
+  <!-- New password screen (after clicking email link) -->
+  <div id="newpass-screen" style="display:none;position:fixed;inset:0;z-index:10000;background:linear-gradient(160deg,#0B3B47,#1A8C8C);flex-direction:column;align-items:center;justify-content:center;padding:32px">
+    <div style="font-family:'Plus Jakarta Sans',sans-serif;color:white;max-width:360px;width:100%;text-align:center">
+      <div style="font-size:40px;margin-bottom:12px">🔐</div>
+      <div style="font-weight:800;font-size:22px;margin-bottom:8px">Nueva contraseña</div>
+      <div style="font-size:14px;opacity:.8;margin-bottom:24px">Elige una contraseña nueva para tu cuenta.</div>
+      <input type="password" id="newpass-input" placeholder="Nueva contraseña (mínimo 6 caracteres)"
+        style="width:100%;padding:15px;border-radius:14px;border:none;font-size:16px;font-family:inherit;margin-bottom:10px;box-sizing:border-box">
+      <input type="password" id="newpass-confirm" placeholder="Confirmar contraseña"
+        style="width:100%;padding:15px;border-radius:14px;border:none;font-size:16px;font-family:inherit;margin-bottom:14px;box-sizing:border-box">
+      <button onclick="saveNewPassword()"
+        style="width:100%;padding:16px;border-radius:14px;border:none;background:#F08A5D;color:white;font-size:16px;font-weight:700;font-family:inherit;cursor:pointer">
+        Guardar contraseña
+      </button>
+      <div id="newpass-msg" style="font-size:13px;margin-top:14px;min-height:18px"></div>
     </div>
   </div>
 
@@ -2582,6 +2625,72 @@ async function authSignUp() {
     err.textContent = '❌ ' + traduceAuthError(e.message);
   } finally {
     showAuthLoading(false);
+  }
+}
+
+// ── RECUPERAR CONTRASEÑA ──
+function showForgotPassword() {
+  const email = document.getElementById('auth-email').value;
+  if (email) document.getElementById('forgot-email').value = email;
+  document.getElementById('forgot-msg').textContent = '';
+  document.getElementById('forgot-screen').style.display = 'flex';
+}
+
+function hideForgotPassword() {
+  document.getElementById('forgot-screen').style.display = 'none';
+}
+
+async function sendPasswordReset() {
+  if (!CLOUD.enabled || !CLOUD.client) {
+    document.getElementById('forgot-msg').textContent = '⚠️ La nube no está conectada.';
+    document.getElementById('forgot-msg').style.color = '#FFD2C2';
+    return;
+  }
+  const email = document.getElementById('forgot-email').value.trim();
+  if (!email) {
+    document.getElementById('forgot-msg').textContent = '⚠️ Escribe tu correo.';
+    document.getElementById('forgot-msg').style.color = '#FFD2C2';
+    return;
+  }
+  document.getElementById('forgot-msg').textContent = '⏳ Enviando…';
+  document.getElementById('forgot-msg').style.color = 'white';
+  try {
+    const { error } = await CLOUD.client.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (error) throw error;
+    document.getElementById('forgot-msg').style.color = '#C8F0D2';
+    document.getElementById('forgot-msg').textContent =
+      '✓ Listo. Revisa tu correo y da clic en el enlace. Puede tardar unos minutos.';
+  } catch(e) {
+    document.getElementById('forgot-msg').style.color = '#FFD2C2';
+    document.getElementById('forgot-msg').textContent = '❌ ' + traduceAuthError(e.message);
+  }
+}
+
+async function saveNewPassword() {
+  const pw = document.getElementById('newpass-input').value;
+  const conf = document.getElementById('newpass-confirm').value;
+  const msg = document.getElementById('newpass-msg');
+  if (!pw || pw.length < 6) {
+    msg.style.color = '#FFD2C2'; msg.textContent = '⚠️ Mínimo 6 caracteres.'; return;
+  }
+  if (pw !== conf) {
+    msg.style.color = '#FFD2C2'; msg.textContent = '⚠️ Las contraseñas no coinciden.'; return;
+  }
+  msg.style.color = 'white'; msg.textContent = '⏳ Guardando…';
+  try {
+    const { error } = await CLOUD.client.auth.updateUser({ password: pw });
+    if (error) throw error;
+    msg.style.color = '#C8F0D2';
+    msg.textContent = '✓ Contraseña actualizada. Entrando…';
+    setTimeout(async () => {
+      document.getElementById('newpass-screen').style.display = 'none';
+      const { data } = await CLOUD.client.auth.getSession();
+      if (data && data.session) await onAuthSuccess(data.session.user);
+    }, 1500);
+  } catch(e) {
+    msg.style.color = '#FFD2C2'; msg.textContent = '❌ ' + traduceAuthError(e.message);
   }
 }
 
@@ -7714,6 +7823,34 @@ saveLocalOnly();
   // Whether cloud or not, render the app behind
   renderHomeAlerts();
   updateStatusBar();
+})();
+
+// Listen for PASSWORD_RECOVERY: fires when user clicks the reset email link
+(async function listenAuthEvents() {
+  let waited = 0;
+  while ((!window.supabase || !CLOUD.client) && waited < 5000) {
+    await new Promise(r => setTimeout(r, 200));
+    waited += 200;
+  }
+  if (!CLOUD.client) return;
+  CLOUD.client.auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      const auth = document.getElementById('auth-screen');
+      const forgot = document.getElementById('forgot-screen');
+      if (auth) auth.style.display = 'none';
+      if (forgot) forgot.style.display = 'none';
+      const np = document.getElementById('newpass-screen');
+      if (np) {
+        np.style.display = 'flex';
+        ['newpass-input','newpass-confirm'].forEach(id => {
+          const el = document.getElementById(id);
+          if(el) el.value = '';
+        });
+        const msg = document.getElementById('newpass-msg');
+        if(msg) msg.textContent = '';
+      }
+    }
+  });
 })();
 
 function showCloudOfflineNote() {
